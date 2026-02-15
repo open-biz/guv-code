@@ -1,0 +1,14 @@
+aider/
+amux/
+codebuff/
+crush/
+fast-resume/
+gemini-cli/
+target/
+Cargo.lock
+.guv/
+
+
+# Added by cargo
+
+/target
