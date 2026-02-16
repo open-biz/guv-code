@@ -1,8 +1,11 @@
 mod config;
+mod index;
 
 use clap::{Parser, Subcommand};
 use anyhow::Result;
 use config::Config;
+use index::RepoIndex;
+use std::env;
 
 #[derive(Parser)]
 #[command(name = "guv")]
@@ -75,6 +78,18 @@ fn main() -> Result<()> {
             }
         }
         Commands::Chat { message } => {
+            let repo_path = env::current_dir()?;
+            println!("Updating index...");
+            let mut index = RepoIndex::load_or_create(&repo_path)?;
+            let changed = index.update(&repo_path)?;
+            index.save(&repo_path)?;
+            
+            if !changed.is_empty() {
+                println!("Indexed {} changed files.", changed.len());
+            } else {
+                println!("Index up to date.");
+            }
+
             println!("Chat command: message={:?}", message);
         }
     }
