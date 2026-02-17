@@ -1,11 +1,17 @@
 mod config;
 mod index;
+mod llm;
+mod agent;
+mod ast;
 
 use clap::{Parser, Subcommand};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use config::Config;
 use index::RepoIndex;
+use agent::{ScoutAgent, CoderAgent};
+use llm::{GeminiProvider, AnthropicProvider};
 use std::env;
+use std::fs;
 
 #[derive(Parser)]
 #[command(name = "guv")]
@@ -82,16 +88,36 @@ async fn main() -> Result<()> {
             let repo_path = env::current_dir()?;
             println!("Updating index...");
             let mut index = RepoIndex::load_or_create(&repo_path)?;
-            let changed = index.update(&repo_path)?;
+            let _changed = index.update(&repo_path)?;
             index.save(&repo_path)?;
             
-            if !changed.is_empty() {
-                println!("Indexed {} changed files.", changed.len());
-            } else {
-                println!("Index up to date.");
+            let query = message.context("Interactive mode not yet implemented. Please provide a message.")?;
+            
+            let gemini_key = config.keys.gemini.clone().context("Gemini API key not set. Run `guv auth --gemini <key>`")?;
+            let anthropic_key = config.keys.anthropic.clone().context("Anthropic API key not set. Run `guv auth --anthropic <key>`")?;
+
+            let scout_provider = GeminiProvider::new(gemini_key);
+            let coder_provider = AnthropicProvider::new(anthropic_key);
+
+            let scout = ScoutAgent::new(&scout_provider);
+            let coder = CoderAgent::new(&coder_provider);
+
+            println!("Scouting for relevant files...");
+            let relevant_files = scout.find_files(&index, &query).await?;
+            println!("Relevant files: {:?}", relevant_files);
+
+            let mut file_contents = Vec::new();
+            for path_str in relevant_files {
+                let path = repo_path.join(&path_str);
+                if path.exists() {
+                    let content = fs::read_to_string(path)?;
+                    file_contents.push((path_str, content));
+                }
             }
 
-            println!("Chat command: message={:?}", message);
+            println!("Generating edits...");
+            let edits = coder.generate_edits(&query, file_contents).await?;
+            println!("--- PROPOSED EDITS ---\n{}\n---------------------", edits);
         }
     }
 
