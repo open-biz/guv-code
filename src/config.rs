@@ -51,7 +51,7 @@ impl Config {
     }
 
     fn config_path() -> Result<PathBuf> {
-        if let Some(proj_dirs) = ProjectDirs::from("com", "guv", "guv-code") {
+        if let Some(_proj_dirs) = ProjectDirs::from("com", "guv", "guv-code") {
              // We can also use a simple home-dir based path if preferred, 
              // but ProjectDirs is more idiomatic.
              // For "guv", let's use ~/.guv.toml as requested in spec.

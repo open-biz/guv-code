@@ -3,6 +3,8 @@ mod index;
 mod llm;
 mod agent;
 mod ast;
+mod diff;
+mod git;
 
 use clap::{Parser, Subcommand};
 use anyhow::{Context, Result};
@@ -10,6 +12,8 @@ use config::Config;
 use index::RepoIndex;
 use agent::{ScoutAgent, CoderAgent};
 use llm::{GeminiProvider, AnthropicProvider};
+use diff::DiffEngine;
+use git::GitManager;
 use std::env;
 use std::fs;
 use inquire::Text;
@@ -48,6 +52,8 @@ enum Commands {
         /// The message to send
         message: Option<String>,
     },
+    /// Undo the last AI edit
+    Undo,
 }
 
 #[tokio::main]
@@ -57,12 +63,12 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Auth { gemini, anthropic } => {
-            if let Some(key) = gemini {
-                config.keys.gemini = Some(key);
+            if let Some(ref key) = gemini {
+                config.keys.gemini = Some(key.clone());
                 println!("Gemini API key updated.");
             }
-            if let Some(key) = anthropic {
-                config.keys.anthropic = Some(key);
+            if let Some(ref key) = anthropic {
+                config.keys.anthropic = Some(key.clone());
                 println!("Anthropic API key updated.");
             }
             config.save()?;
@@ -141,6 +147,31 @@ async fn main() -> Result<()> {
                 pb.finish_and_clear();
 
                 println!("\n--- PROPOSED EDITS ---\n{}\n---------------------\n", edits);
+
+                if Text::new("Apply these edits? (y/n)").prompt()? == "y" {
+                    if GitManager::is_repo(&repo_path) {
+                        GitManager::auto_stage_all(&repo_path)?;
+                    }
+
+                    DiffEngine::apply_edits(&edits, &repo_path)?;
+
+                    if GitManager::is_repo(&repo_path) {
+                        let commit_msg = format!("guv: {}", query);
+                        GitManager::commit(&repo_path, &commit_msg)?;
+                        println!("Applied and committed.");
+                    } else {
+                        println!("Applied.");
+                    }
+                }
+            }
+        }
+        Commands::Undo => {
+            let repo_path = env::current_dir()?;
+            if GitManager::is_repo(&repo_path) {
+                GitManager::undo(&repo_path)?;
+                println!("Undone last edit.");
+            } else {
+                println!("Not a git repository.");
             }
         }
     }

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use futures::{Stream, StreamExt};
+use futures::Stream;
 use std::pin::Pin;
 use serde::{Deserialize, Serialize};
 
@@ -79,8 +79,6 @@ impl ModelProvider for GeminiProvider {
         &self,
         _messages: Vec<Message>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
-        // Basic implementation for now, streaming for Gemini is a bit complex
-        // let's start with non-streaming or simple mock for now if it's too much
         anyhow::bail!("Streaming not yet implemented for Gemini")
     }
 
@@ -106,12 +104,13 @@ impl ModelProvider for GeminiProvider {
             .json::<GeminiResponse>()
             .await?;
 
-        response.candidates.get(0)
+        let text = response.candidates.get(0)
             .context("No candidates in response")?
             .content.parts.get(0)
             .context("No parts in candidate")?
-            .text.clone().into()
-            .pipe(Ok)
+            .text.clone();
+            
+        Ok(text)
     }
 }
 
@@ -186,17 +185,10 @@ impl ModelProvider for AnthropicProvider {
             .json::<AnthropicResponse>()
             .await?;
 
-        response.content.get(0)
+        let text = response.content.get(0)
             .context("No content in response")?
-            .text.clone().into()
-            .pipe(Ok)
+            .text.clone();
+            
+        Ok(text)
     }
-}
-
-// Simple pipe helper because I used it above
-trait Pipe {
-    fn pipe<F, R>(self, f: F) -> R where F: FnOnce(Self) -> R, Self: Sized;
-}
-impl<T> Pipe for T {
-    fn pipe<F, R>(self, f: F) -> R where F: FnOnce(Self) -> R, Self: Sized { f(self) }
 }
