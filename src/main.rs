@@ -5,19 +5,13 @@ mod agent;
 mod ast;
 mod diff;
 mod git;
+mod tui;
 
 use clap::{Parser, Subcommand};
 use anyhow::{Context, Result};
 use config::Config;
-use index::RepoIndex;
-use agent::{ScoutAgent, CoderAgent};
-use llm::{GeminiProvider, AnthropicProvider};
-use diff::DiffEngine;
 use git::GitManager;
 use std::env;
-use std::fs;
-use inquire::Text;
-use indicatif::{ProgressBar, ProgressStyle};
 
 #[derive(Parser)]
 #[command(name = "guv")]
@@ -92,78 +86,8 @@ async fn main() -> Result<()> {
                 println!("  Remaining: ${:.2}", config.budget.limit - config.budget.consumed);
             }
         }
-        Commands::Chat { message } => {
-            let repo_path = env::current_dir()?;
-            let gemini_key = config.keys.gemini.clone().context("Gemini API key not set. Run `guv auth --gemini <key>`")?;
-            let anthropic_key = config.keys.anthropic.clone().context("Anthropic API key not set. Run `guv auth --anthropic <key>`")?;
-
-            let scout_provider = GeminiProvider::new(gemini_key);
-            let coder_provider = AnthropicProvider::new(anthropic_key);
-
-            let scout = ScoutAgent::new(&scout_provider);
-            let coder = CoderAgent::new(&coder_provider);
-
-            let mut current_message = message;
-
-            loop {
-                let query = match current_message.take() {
-                    Some(m) => m,
-                    None => {
-                        match Text::new("Guv'nor?").prompt() {
-                            Ok(m) if !m.trim().is_empty() => m,
-                            _ => break,
-                        }
-                    }
-                };
-
-                if query == "exit" || query == "quit" {
-                    break;
-                }
-
-                let pb = ProgressBar::new_spinner();
-                pb.set_style(ProgressStyle::default_spinner()
-                    .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-                    .template("{spinner:.blue} {msg}")?);
-                
-                pb.set_message("Updating index...");
-                let mut index = RepoIndex::load_or_create(&repo_path)?;
-                let _changed = index.update(&repo_path)?;
-                index.save(&repo_path)?;
-
-                pb.set_message("Scouting for relevant files...");
-                let relevant_files = scout.find_files(&index, &query).await?;
-                
-                pb.set_message("Generating edits...");
-                let mut file_contents = Vec::new();
-                for path_str in relevant_files {
-                    let path = repo_path.join(&path_str);
-                    if path.exists() {
-                        let content = fs::read_to_string(path)?;
-                        file_contents.push((path_str, content));
-                    }
-                }
-
-                let edits = coder.generate_edits(&query, file_contents).await?;
-                pb.finish_and_clear();
-
-                println!("\n--- PROPOSED EDITS ---\n{}\n---------------------\n", edits);
-
-                if Text::new("Apply these edits? (y/n)").prompt()? == "y" {
-                    if GitManager::is_repo(&repo_path) {
-                        GitManager::auto_stage_all(&repo_path)?;
-                    }
-
-                    DiffEngine::apply_edits(&edits, &repo_path)?;
-
-                    if GitManager::is_repo(&repo_path) {
-                        let commit_msg = format!("guv: {}", query);
-                        GitManager::commit(&repo_path, &commit_msg)?;
-                        println!("Applied and committed.");
-                    } else {
-                        println!("Applied.");
-                    }
-                }
-            }
+        Commands::Chat { message: _ } => {
+            tui::run_tui().context("Failed to run TUI")?;
         }
         Commands::Undo => {
             let repo_path = env::current_dir()?;
