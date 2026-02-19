@@ -87,7 +87,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::Chat { message: _ } => {
-            tui::run_tui().context("Failed to run TUI")?;
+            tui::run_tui().await.context("Failed to run TUI")?;
         }
         Commands::Undo => {
             let repo_path = env::current_dir()?;
