@@ -26,3 +26,8 @@ ratatui = "0.26"
 crossterm = "0.27"
 inquire = "0.7"
 indicatif = "0.17"
+miette = { version = "5.10", features = ["fancy"] }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+rayon = "1.10"
+eventsource-stream = "0.2"
+owo-colors = "4.0"

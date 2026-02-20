@@ -1,10 +1,12 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use std::pin::Pin;
 use serde::{Deserialize, Serialize};
+use eventsource_stream::Eventsource;
+use tokio::sync::mpsc;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Message {
     pub role: String,
     pub content: String,
@@ -12,10 +14,10 @@ pub struct Message {
 
 #[async_trait]
 pub trait ModelProvider: Send + Sync {
-    async fn chat_stream(
+    async fn complete_stream(
         &self,
         messages: Vec<Message>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>>;
+    ) -> Result<mpsc::Receiver<Result<String>>>;
     
     async fn chat(
         &self,
@@ -75,11 +77,60 @@ struct GeminiPartResponse {
 
 #[async_trait]
 impl ModelProvider for GeminiProvider {
-    async fn chat_stream(
+    async fn complete_stream(
         &self,
-        _messages: Vec<Message>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
-        anyhow::bail!("Streaming not yet implemented for Gemini")
+        messages: Vec<Message>,
+    ) -> Result<mpsc::Receiver<Result<String>>> {
+        let (tx, rx) = mpsc::channel(100);
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse&key={}",
+            self.api_key
+        );
+
+        let contents = messages.into_iter().map(|m| {
+            GeminiContent {
+                role: if m.role == "user" { "user".to_string() } else { "model".to_string() },
+                parts: vec![GeminiPart { text: m.content }],
+            }
+        }).collect();
+
+        let request = GeminiRequest { contents };
+        let client = self.client.clone();
+
+        tokio::spawn(async move {
+            let res = client.post(url)
+                .json(&request)
+                .send()
+                .await;
+
+            match res {
+                Ok(response) => {
+                    let mut stream = response.bytes_stream().eventsource();
+                    while let Some(event) = stream.next().await {
+                        match event {
+                            Ok(e) => {
+                                if let Ok(resp) = serde_json::from_str::<GeminiResponse>(&e.data) {
+                                    if let Some(candidate) = resp.candidates.get(0) {
+                                        if let Some(part) = candidate.content.parts.get(0) {
+                                            let _ = tx.send(Ok(part.text.clone())).await;
+                                        }
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                let _ = tx.send(Err(anyhow::anyhow!("Stream error: {}", err))).await;
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    let _ = tx.send(Err(anyhow::anyhow!("Request error: {}", err))).await;
+                }
+            }
+        });
+
+        Ok(rx)
     }
 
     async fn chat(&self, messages: Vec<Message>) -> Result<String> {
@@ -133,6 +184,7 @@ struct AnthropicRequest {
     model: String,
     messages: Vec<AnthropicMessage>,
     max_tokens: u32,
+    stream: bool,
 }
 
 #[derive(Serialize)]
@@ -151,13 +203,78 @@ struct AnthropicContent {
     text: String,
 }
 
+#[derive(Deserialize)]
+#[serde(tag = "type")]
+enum AnthropicStreamEvent {
+    #[serde(rename = "content_block_delta")]
+    Delta { delta: AnthropicDelta },
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Deserialize)]
+struct AnthropicDelta {
+    text: String,
+}
+
 #[async_trait]
 impl ModelProvider for AnthropicProvider {
-    async fn chat_stream(
+    async fn complete_stream(
         &self,
-        _messages: Vec<Message>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
-        anyhow::bail!("Streaming not yet implemented for Anthropic")
+        messages: Vec<Message>,
+    ) -> Result<mpsc::Receiver<Result<String>>> {
+        let (tx, rx) = mpsc::channel(100);
+        let url = "https://api.anthropic.com/v1/messages";
+
+        let anthropic_messages: Vec<AnthropicMessage> = messages.into_iter().map(|m| {
+            AnthropicMessage {
+                role: m.role,
+                content: m.content,
+            }
+        }).collect();
+
+        let request = AnthropicRequest {
+            model: "claude-3-7-sonnet-latest".to_string(),
+            messages: anthropic_messages,
+            max_tokens: 4096,
+            stream: true,
+        };
+
+        let client = self.client.clone();
+        let api_key = self.api_key.clone();
+
+        tokio::spawn(async move {
+            let res = client.post(url)
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", "2023-06-01")
+                .json(&request)
+                .send()
+                .await;
+
+            match res {
+                Ok(response) => {
+                    let mut stream = response.bytes_stream().eventsource();
+                    while let Some(event) = stream.next().await {
+                        match event {
+                            Ok(e) => {
+                                if let Ok(AnthropicStreamEvent::Delta { delta }) = serde_json::from_str::<AnthropicStreamEvent>(&e.data) {
+                                    let _ = tx.send(Ok(delta.text)).await;
+                                }
+                            }
+                            Err(err) => {
+                                let _ = tx.send(Err(anyhow::anyhow!("Stream error: {}", err))).await;
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    let _ = tx.send(Err(anyhow::anyhow!("Request error: {}", err))).await;
+                }
+            }
+        });
+
+        Ok(rx)
     }
 
     async fn chat(&self, messages: Vec<Message>) -> Result<String> {
@@ -174,6 +291,7 @@ impl ModelProvider for AnthropicProvider {
             model: "claude-3-7-sonnet-latest".to_string(),
             messages: anthropic_messages,
             max_tokens: 4096,
+            stream: false,
         };
 
         let response = self.client.post(url)

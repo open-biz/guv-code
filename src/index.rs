@@ -4,12 +4,12 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use hex;
+use xxhash_rust::xxh3::xxh3_64;
+use rayon::prelude::*;
 
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct RepoIndex {
-    pub files: HashMap<String, String>, // path -> hash
+    pub files: HashMap<String, u64>, // path -> hash
 }
 
 impl RepoIndex {
@@ -33,53 +33,41 @@ impl RepoIndex {
 
     pub fn update(&mut self, repo_path: &Path) -> Result<Vec<String>> {
         let mut changed_files = Vec::new();
-        let mut new_files = HashMap::new();
 
         let walker = WalkBuilder::new(repo_path)
-            .hidden(false) // we want to respect gitignore but maybe see hidden files?
+            .hidden(false)
             .build();
 
-        for result in walker {
-            let entry = match result {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
+        let entries: Vec<_> = walker.filter_map(|e| e.ok()).collect();
 
+        let new_files: HashMap<String, u64> = entries.par_iter().filter_map(|entry| {
             if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
                 let path = entry.path();
                 
-                // Skip .git and .guv directories
                 if path.components().any(|c| c.as_os_str() == ".git" || c.as_os_str() == ".guv") {
-                    continue;
+                    return None;
                 }
 
-                let relative_path = path.strip_prefix(repo_path)?
-                    .to_str()
-                    .context("Non-UTF8 path")?
+                let relative_path = path.strip_prefix(repo_path).ok()?
+                    .to_str()?
                     .to_string();
 
-                let hash = self.hash_file(path)?;
+                let content = fs::read(path).ok()?;
+                let hash = xxh3_64(&content);
 
-                if let Some(old_hash) = self.files.get(&relative_path) {
-                    if old_hash != &hash {
-                        changed_files.push(relative_path.clone());
-                    }
-                } else {
-                    changed_files.push(relative_path.clone());
-                }
+                Some((relative_path, hash))
+            } else {
+                None
+            }
+        }).collect();
 
-                new_files.insert(relative_path, hash);
+        for (path, hash) in &new_files {
+            if self.files.get(path) != Some(hash) {
+                changed_files.push(path.clone());
             }
         }
 
         self.files = new_files;
         Ok(changed_files)
-    }
-
-    fn hash_file(&self, path: &Path) -> Result<String> {
-        let mut file = fs::File::open(path)?;
-        let mut hasher = Sha256::new();
-        std::io::copy(&mut file, &mut hasher)?;
-        Ok(hex::encode(hasher.finalize()))
     }
 }
