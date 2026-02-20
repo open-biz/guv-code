@@ -13,7 +13,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-use crate::llm::{GeminiProvider, AnthropicProvider};
+use crate::llm::{GeminiProvider, AnthropicProvider, ModelProvider, Message as LlmMessage};
 use crate::index::RepoIndex;
 use crate::agent::{ScoutAgent, CoderAgent};
 use crate::config::Config;
@@ -95,16 +95,13 @@ async fn run_loop<B: Backend>(terminal: &mut ratatui::Terminal<B>, state: &mut T
                         let scout_provider = GeminiProvider::new(gemini_key.clone());
                         let coder_provider = AnthropicProvider::new(anthropic_key.clone());
 
-                        let scout = ScoutAgent::new(&scout_provider);
-                        let coder = CoderAgent::new(&coder_provider);
-
                         state.agent_logs.push("Index: Updating...".to_string());
                         let mut index = RepoIndex::load_or_create(&state.repo_path)?;
                         index.update(&state.repo_path)?;
                         index.save(&state.repo_path)?;
 
                         state.agent_logs.push("Scout: Identifying files...".to_string());
-                        let relevant_files = scout.find_files(&index, &query).await?;
+                        let relevant_files = ScoutAgent::new(&scout_provider).find_files(&index, &query).await?;
                         
                         state.agent_logs.push(format!("Scout: Found {} files.", relevant_files.len()));
                         state.agent_logs.push("Coder: Generating edits...".to_string());
@@ -118,8 +115,47 @@ async fn run_loop<B: Backend>(terminal: &mut ratatui::Terminal<B>, state: &mut T
                             }
                         }
 
-                        let edits = coder.generate_edits(&query, file_contents).await?;
-                        state.messages.push(format!("Guv: Edits generated for your review."));
+                        let _coder = CoderAgent::new(&coder_provider);
+                        
+                        // Use streaming for the Coder
+                        let mut context = String::new();
+                        for (path, content) in file_contents {
+                            context.push_str(&format!("File: {}\n```\n{}\n```\n\n", path, content));
+                        }
+
+                        let system_prompt = "You are an expert software engineer. You generate surgical code edits using SEARCH/REPLACE blocks.
+Format your response exactly like this:
+FILE: path/to/file
+<<<<
+existing code to search for
+====
+new code to replace it with
+>>>>";
+
+                        let prompt = format!(
+                            "{}\n\nUser Request: \"{}\"\n\nContext:\n{}",
+                            system_prompt, query, context
+                        );
+
+                        let messages = vec![LlmMessage { role: "user".to_string(), content: prompt }];
+                        let mut stream = coder_provider.complete_stream(messages).await?;
+                        
+                        state.messages.push("Guv: ".to_string());
+                        let msg_idx = state.messages.len() - 1;
+
+                        while let Some(chunk) = stream.recv().await {
+                            match chunk {
+                                Ok(text) => {
+                                    state.messages[msg_idx].push_str(&text);
+                                    terminal.draw(|f| ui(f, state))?;
+                                }
+                                Err(e) => {
+                                    state.messages.push(format!("Error: {}", e));
+                                    break;
+                                }
+                            }
+                        }
+
                         state.agent_logs.push("Coder: Done.".to_string());
                     }
                     KeyCode::Esc => {

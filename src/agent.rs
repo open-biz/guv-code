@@ -42,9 +42,18 @@ impl<'a> CoderAgent<'a> {
             context.push_str(&format!("File: {}\n```\n{}\n```\n\n", path, content));
         }
 
+        let system_prompt = "You are an expert software engineer. You generate surgical code edits using SEARCH/REPLACE blocks.
+Format your response exactly like this:
+FILE: path/to/file
+<<<<
+existing code to search for
+====
+new code to replace it with
+>>>>";
+
         let prompt = format!(
-            "User Request: \"{}\"\n\nContext:\n{}\n\nPlease provide the necessary edits for the files above. Format your response as a series of blocks like this:\n\nFILE: path/to/file\n<<<<\nold code\n====\nnew code\n>>>>",
-            query, context
+            "{}\n\nUser Request: \"{}\"\n\nContext:\n{}",
+            system_prompt, query, context
         );
 
         let messages = vec![Message { role: "user".to_string(), content: prompt }];
