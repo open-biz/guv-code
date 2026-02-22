@@ -36,13 +36,14 @@ impl<'a> CoderAgent<'a> {
         Self { provider }
     }
 
-    pub async fn generate_edits(&self, query: &str, files: Vec<(String, String)>) -> Result<String> {
+    pub async fn heal(&self, error: &str, files: Vec<(String, String)>) -> Result<String> {
         let mut context = String::new();
         for (path, content) in files {
             context.push_str(&format!("File: {}\n```\n{}\n```\n\n", path, content));
         }
 
-        let system_prompt = "You are an expert software engineer. You generate surgical code edits using SEARCH/REPLACE blocks.
+        let system_prompt = "You are an expert software engineer. You have been provided with an error message from a failed build or test.
+Your task is to FIX the error using SEARCH/REPLACE blocks.
 Format your response exactly like this:
 FILE: path/to/file
 <<<<
@@ -52,8 +53,8 @@ new code to replace it with
 >>>>";
 
         let prompt = format!(
-            "{}\n\nUser Request: \"{}\"\n\nContext:\n{}",
-            system_prompt, query, context
+            "{}\n\nError Message:\n```\n{}\n```\n\nContext:\n{}",
+            system_prompt, error, context
         );
 
         let messages = vec![Message { role: "user".to_string(), content: prompt }];
