@@ -17,6 +17,8 @@ use crate::llm::{GeminiProvider, AnthropicProvider, ModelProvider, Message as Ll
 use crate::index::RepoIndex;
 use crate::agent::{ScoutAgent, CoderAgent};
 use crate::config::Config;
+use crate::terminal::TerminalManager;
+use crate::diff::DiffEngine;
 use std::path::PathBuf;
 use std::env;
 use anyhow::Result;
@@ -115,11 +117,11 @@ async fn run_loop<B: Backend>(terminal: &mut ratatui::Terminal<B>, state: &mut T
                             }
                         }
 
-                        let _coder = CoderAgent::new(&coder_provider);
+                        let coder = CoderAgent::new(&coder_provider);
                         
                         // Use streaming for the Coder
                         let mut context = String::new();
-                        for (path, content) in file_contents {
+                        for (path, content) in &file_contents {
                             context.push_str(&format!("File: {}\n```\n{}\n```\n\n", path, content));
                         }
 
@@ -153,6 +155,34 @@ new code to replace it with
                                     state.messages.push(format!("Error: {}", e));
                                     break;
                                 }
+                            }
+                        }
+
+                        let edits = state.messages[msg_idx].clone();
+
+                        // Self-Healing Loop
+                        loop {
+                            state.agent_logs.push("System: Applying edits...".to_string());
+                            let _ = DiffEngine::apply_edits(&edits, &state.repo_path);
+                            
+                            state.agent_logs.push("System: Running cargo check...".to_string());
+                            terminal.draw(|f| ui(f, state))?;
+                            
+                            let check_res = TerminalManager::run_command(&state.repo_path, "cargo", &["check"])?;
+                            
+                            if check_res.success {
+                                state.agent_logs.push("System: Build clean! ✅".to_string());
+                                break;
+                            } else {
+                                state.agent_logs.push("System: Build failed. Healing... 🩹".to_string());
+                                terminal.draw(|f| ui(f, state))?;
+                                
+                                let heal_edits = coder.heal(&check_res.stderr, file_contents.clone()).await?;
+                                state.messages.push(format!("Guv (Heal): Fixing build error..."));
+                                let h_idx = state.messages.len() - 1;
+                                state.messages[h_idx].push_str(&heal_edits);
+                                
+                                DiffEngine::apply_edits(&heal_edits, &state.repo_path)?;
                             }
                         }
 
