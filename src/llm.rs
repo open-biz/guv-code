@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use futures::{Stream, StreamExt};
-use std::pin::Pin;
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use eventsource_stream::Eventsource;
 use tokio::sync::mpsc;
@@ -25,6 +24,7 @@ pub trait ModelProvider: Send + Sync {
     ) -> Result<String>;
 }
 
+#[derive(Clone)]
 pub struct GeminiProvider {
     api_key: String,
     client: reqwest::Client,
@@ -165,6 +165,7 @@ impl ModelProvider for GeminiProvider {
     }
 }
 
+#[derive(Clone)]
 pub struct AnthropicProvider {
     api_key: String,
     client: reqwest::Client,

@@ -1,18 +1,23 @@
 mod config;
 mod index;
 mod llm;
-mod agent;
-mod ast;
-mod diff;
 mod git;
-mod tui;
+mod terminal;
+mod agent_logic;
+mod orchestrator;
+mod ui;
 
 use clap::{Parser, Subcommand};
 use config::Config;
 use git::GitManager;
+use orchestrator::Orchestrator;
+use ui::AgentStepper;
+use agent_logic::AgentMessage;
 use std::env;
 use owo_colors::OwoColorize;
 use miette::{Result, miette};
+use tokio::sync::mpsc;
+use inquire::Text;
 
 #[derive(Parser)]
 #[command(name = "guv")]
@@ -87,12 +92,50 @@ async fn main() -> Result<()> {
             }
         }
         Commands::Chat { message: _ } => {
-            println!("🎩 {}", "GUV-Code Initialized. Right away, Guv'nor.".bold().cyan());
-            tui::run_tui().await.map_err(|e| miette!("{}", e))?;
+            println!("🎩 {}", "GUV-Code God-Tier Engine Initialized.".bold().cyan());
+            
+            let repo_path = env::current_dir().map_err(|e| miette!("{}", e))?;
+            let config = Config::load().map_err(|e| miette!("{}", e))?;
+            let gemini_key = config.keys.gemini.clone().ok_or_else(|| miette!("Gemini key missing. Run `guv auth --gemini <key>`"))?;
+            let anthropic_key = config.keys.anthropic.clone().ok_or_else(|| miette!("Anthropic key missing. Run `guv auth --anthropic <key>`"))?;
+
+            let orchestrator = Orchestrator::new(repo_path.clone(), gemini_key, anthropic_key);
+
+            loop {
+                let query = match Text::new("Guv'nor?").prompt() {
+                    Ok(m) if !m.trim().is_empty() => m,
+                    _ => break,
+                };
+
+                if query == "exit" || query == "quit" {
+                    break;
+                }
+
+                let (ui_tx, mut ui_rx) = mpsc::channel(100);
+                let mut stepper = AgentStepper::new();
+                
+                let query_clone = query.clone();
+                let orchestrator_clone = orchestrator.clone();
+                let orch_handle = tokio::spawn(async move {
+                    orchestrator_clone.run(query_clone, ui_tx).await
+                });
+
+                // UI loop to process messages from orchestrator
+                while let Some(msg) = ui_rx.recv().await {
+                    stepper.handle_message(msg.clone());
+                    
+                    if let AgentMessage::CoderCompleted(file, _patch) = msg {
+                        println!("{} {}", "✔".green(), format!("Final patch generated for {}", file).dimmed());
+                    }
+                }
+
+                let _ = orch_handle.await;
+            }
         }
         Commands::Undo => {
             let repo_path = env::current_dir().map_err(|e| miette!("{}", e))?;
             if GitManager::is_repo(&repo_path) {
+                GitManager::auto_stage_all(&repo_path).map_err(|e| miette!("{}", e))?;
                 GitManager::undo(&repo_path).map_err(|e| miette!("{}", e))?;
                 println!("{} Undone last edit.", "✅".green());
             } else {

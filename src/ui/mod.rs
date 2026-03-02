@@ -1,4 +1,6 @@
-use crate::agents::AgentMessage;
+pub mod diff_viewer;
+
+use crate::agent_logic::AgentMessage;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::collections::HashMap;
 use owo_colors::OwoColorize;

@@ -1,13 +1,14 @@
-use crate::agents::AgentMessage;
-use crate::agents::planner::PlannerAgent;
-use crate::agents::coder::CoderAgent;
-use crate::agents::reviewer::ReviewerAgent;
-use crate::llm::{ModelProvider, GeminiProvider, AnthropicProvider};
+use crate::agent_logic::AgentMessage;
+use crate::agent_logic::planner::PlannerAgent;
+use crate::agent_logic::coder::CoderAgent;
+use crate::agent_logic::reviewer::ReviewerAgent;
+use crate::llm::{GeminiProvider, AnthropicProvider};
 use crate::index::RepoIndex;
 use tokio::sync::mpsc;
 use anyhow::Result;
 use std::path::PathBuf;
 
+#[derive(Clone)]
 pub struct Orchestrator {
     repo_path: PathBuf,
     gemini_key: String,
@@ -25,21 +26,20 @@ impl Orchestrator {
         let scout_provider = GeminiProvider::new(self.gemini_key.clone());
         let coder_provider = AnthropicProvider::new(self.anthropic_key.clone());
         
-        let planner = PlannerAgent::new(&scout_provider, agent_tx.clone());
-        let coder = CoderAgent::new(&coder_provider, agent_tx.clone());
-        let reviewer = ReviewerAgent::new(agent_tx.clone());
-        
         let repo_path = self.repo_path.clone();
         let query_clone = query.clone();
+        let agent_tx_planner = agent_tx.clone();
+        let scout_provider_clone = scout_provider.clone();
 
         // Start Orchestration Task
         tokio::spawn(async move {
             let mut index = RepoIndex::load_or_create(&repo_path).unwrap();
             let _ = index.update(&repo_path);
             
+            let planner = PlannerAgent::new(&scout_provider_clone, agent_tx_planner.clone());
             // 1. Planning
             if let Err(e) = planner.plan(&index, &query_clone).await {
-                let _ = agent_tx.send(AgentMessage::Error(e.to_string())).await;
+                let _ = agent_tx_planner.send(AgentMessage::Error(e.to_string())).await;
                 return;
             }
         });
@@ -53,20 +53,20 @@ impl Orchestrator {
                 AgentMessage::PlanCompleted(files) => {
                     let repo_path = self.repo_path.clone();
                     let query_clone = query.clone();
-                    let coder_provider = AnthropicProvider::new(self.anthropic_key.clone());
-                    let agent_tx = agent_tx.clone();
+                    let coder_provider_clone = coder_provider.clone();
+                    let agent_tx_coder = agent_tx.clone();
                     
                     tokio::spawn(async move {
-                        let coder = CoderAgent::new(&coder_provider, agent_tx);
+                        let coder = CoderAgent::new(&coder_provider_clone, agent_tx_coder);
                         let _ = coder.code(&repo_path, &query_clone, files).await;
                     });
                 }
                 AgentMessage::CoderCompleted(file, _patch) => {
                     let repo_path = self.repo_path.clone();
-                    let agent_tx = agent_tx.clone();
+                    let agent_tx_reviewer = agent_tx.clone();
                     
                     tokio::spawn(async move {
-                        let reviewer = ReviewerAgent::new(agent_tx);
+                        let reviewer = ReviewerAgent::new(agent_tx_reviewer);
                         let _ = reviewer.review(&repo_path, &file).await;
                     });
                 }

@@ -1,5 +1,5 @@
 use crate::llm::{ModelProvider, Message};
-use crate::agents::AgentMessage;
+use crate::agent_logic::AgentMessage;
 use tokio::sync::mpsc;
 use anyhow::Result;
 use std::fs;

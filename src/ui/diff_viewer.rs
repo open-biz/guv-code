@@ -1,6 +1,5 @@
 use similar::{ChangeTag, TextDiff};
 use owo_colors::OwoColorize;
-use std::fmt;
 
 pub struct DiffViewer;
 
@@ -13,9 +12,9 @@ impl DiffViewer {
         for (i, change) in diff.iter_all_changes().enumerate() {
             let line_num = (i + 1).to_string();
             let sign = match change.tag() {
-                ChangeTag::Delete => "-".red(),
-                ChangeTag::Insert => "+".green(),
-                ChangeTag::Equal => " ".normal(),
+                ChangeTag::Delete => "-".red().to_string(),
+                ChangeTag::Insert => "+".green().to_string(),
+                ChangeTag::Equal => " ".to_string(),
             };
             
             let content = match change.tag() {
