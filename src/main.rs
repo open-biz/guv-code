@@ -12,6 +12,7 @@ use config::Config;
 use git::GitManager;
 use orchestrator::Orchestrator;
 use ui::AgentStepper;
+use ui::diff_viewer::DiffViewer;
 use agent_logic::AgentMessage;
 use std::env;
 use owo_colors::OwoColorize;
@@ -24,7 +25,7 @@ use inquire::Text;
 #[command(about = "GUV-Code: Right away, Guv'nor.", long_about = None)]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -37,6 +38,9 @@ enum Commands {
         /// Set Anthropic API key
         #[arg(short, long)]
         anthropic: Option<String>,
+        /// Save to local .guvcode instead of global config
+        #[arg(short, long)]
+        local: bool,
     },
     /// Manage and view token budget
     Budget {
@@ -46,6 +50,9 @@ enum Commands {
         /// View current consumption and limit
         #[arg(short, long)]
         status: bool,
+        /// Save to local .guvcode instead of global config
+        #[arg(short, long)]
+        local: bool,
     },
     /// Start an AI-powered chat session
     Chat {
@@ -62,7 +69,7 @@ async fn main() -> Result<()> {
     let mut config = Config::load().map_err(|e| miette!("{}", e))?;
 
     match cli.command {
-        Commands::Auth { gemini, anthropic } => {
+        Some(Commands::Auth { gemini, anthropic, local }) => {
             if let Some(ref key) = gemini {
                 config.keys.gemini = Some(key.clone());
                 println!("{} Gemini API key updated.", "✅".green());
@@ -71,18 +78,28 @@ async fn main() -> Result<()> {
                 config.keys.anthropic = Some(key.clone());
                 println!("{} Anthropic API key updated.", "✅".green());
             }
-            config.save().map_err(|e| miette!("{}", e))?;
+            
+            if local {
+                config.save_local().map_err(|e| miette!("{}", e))?;
+            } else {
+                config.save_global().map_err(|e| miette!("{}", e))?;
+            }
+
             if gemini.is_none() && anthropic.is_none() {
                 println!("{}:", "Current keys".bold().blue());
                 println!("  Gemini:    {}", config.keys.gemini.as_ref().map(|_| "****").unwrap_or("Not set").yellow());
                 println!("  Anthropic: {}", config.keys.anthropic.as_ref().map(|_| "****").unwrap_or("Not set").yellow());
             }
         }
-        Commands::Budget { limit, status } => {
+        Some(Commands::Budget { limit, status, local }) => {
             if let Some(l) = limit {
                 config.budget.limit = l;
                 println!("{} Budget limit updated to ${:.2}", "✅".green(), l);
-                config.save().map_err(|e| miette!("{}", e))?;
+                if local {
+                    config.save_local().map_err(|e| miette!("{}", e))?;
+                } else {
+                    config.save_global().map_err(|e| miette!("{}", e))?;
+                }
             }
             if status || limit.is_none() {
                 println!("{}:", "Budget Status".bold().blue());
@@ -91,15 +108,20 @@ async fn main() -> Result<()> {
                 println!("  Remaining: ${:.2}", (config.budget.limit - config.budget.consumed).green());
             }
         }
-        Commands::Chat { message: _ } => {
-            println!("🎩 {}", "GUV-Code God-Tier Engine Initialized.".bold().cyan());
+        Some(Commands::Undo) => {
+            let repo_path = env::current_dir().map_err(|e| miette!("{}", e))?;
+            if GitManager::is_repo(&repo_path) {
+                GitManager::auto_stage_all(&repo_path).map_err(|e| miette!("{}", e))?;
+                GitManager::undo(&repo_path).map_err(|e| miette!("{}", e))?;
+                println!("{} Undone last edit.", "✅".green());
+            } else {
+                println!("{} Not a git repository.", "❌".red());
+            }
+        }
+        Some(Commands::Chat { message: _ }) | None => {
+            println!("🎩 {}", "GUV-Code Initialized. Ready for orders, Guv'nor.".bold().cyan());
             
             let repo_path = env::current_dir().map_err(|e| miette!("{}", e))?;
-            let config = Config::load().map_err(|e| miette!("{}", e))?;
-            let gemini_key = config.keys.gemini.clone().ok_or_else(|| miette!("Gemini key missing. Run `guv auth --gemini <key>`"))?;
-            let anthropic_key = config.keys.anthropic.clone().ok_or_else(|| miette!("Anthropic key missing. Run `guv auth --anthropic <key>`"))?;
-
-            let orchestrator = Orchestrator::new(repo_path.clone(), gemini_key, anthropic_key);
 
             loop {
                 let query = match Text::new("Guv'nor?").prompt() {
@@ -111,6 +133,23 @@ async fn main() -> Result<()> {
                     break;
                 }
 
+                // Check keys only when trying to run a task
+                let gemini_key = config.keys.gemini.clone();
+                let anthropic_key = config.keys.anthropic.clone();
+
+                if gemini_key.is_none() || anthropic_key.is_none() {
+                    println!("{} {}", "⚠".yellow(), "API keys are missing. Please run:".bold());
+                    println!("  guv-code auth --gemini <key> --anthropic <key>");
+                    println!("  (Add --local to save in this project only)");
+                    continue;
+                }
+
+                let orchestrator = Orchestrator::new(
+                    repo_path.clone(), 
+                    gemini_key.unwrap(), 
+                    anthropic_key.unwrap()
+                );
+
                 let (ui_tx, mut ui_rx) = mpsc::channel(100);
                 let mut stepper = AgentStepper::new();
                 
@@ -120,26 +159,29 @@ async fn main() -> Result<()> {
                     orchestrator_clone.run(query_clone, ui_tx).await
                 });
 
-                // UI loop to process messages from orchestrator
                 while let Some(msg) = ui_rx.recv().await {
                     stepper.handle_message(msg.clone());
                     
-                    if let AgentMessage::CoderCompleted(file, _patch) = msg {
-                        println!("{} {}", "✔".green(), format!("Final patch generated for {}", file).dimmed());
+                    if let AgentMessage::CoderCompleted(file, patch) = msg {
+                        let full_path = repo_path.join(&file);
+                        let old_content = std::fs::read_to_string(&full_path).unwrap_or_default();
+                        
+                        DiffViewer::show(&file, &old_content, &patch);
+                        
+                        if Text::new("Apply this patch, Guv'nor? (y/n)").prompt().unwrap_or_default() == "y" {
+                             if GitManager::is_repo(&repo_path) {
+                                let _ = GitManager::auto_stage_all(&repo_path);
+                             }
+                             let _ = std::fs::write(full_path, patch);
+                             if GitManager::is_repo(&repo_path) {
+                                let _ = GitManager::commit(&repo_path, &format!("guv: {}", query));
+                             }
+                             println!("{} {}", "✅".green(), "Applied and committed.".dimmed());
+                        }
                     }
                 }
 
                 let _ = orch_handle.await;
-            }
-        }
-        Commands::Undo => {
-            let repo_path = env::current_dir().map_err(|e| miette!("{}", e))?;
-            if GitManager::is_repo(&repo_path) {
-                GitManager::auto_stage_all(&repo_path).map_err(|e| miette!("{}", e))?;
-                GitManager::undo(&repo_path).map_err(|e| miette!("{}", e))?;
-                println!("{} Undone last edit.", "✅".green());
-            } else {
-                println!("{} Not a git repository.", "❌".red());
             }
         }
     }

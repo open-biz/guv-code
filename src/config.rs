@@ -1,22 +1,22 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
 
-#[derive(Serialize, Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct Config {
     pub keys: Keys,
     pub budget: Budget,
 }
 
-#[derive(Serialize, Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct Keys {
     pub gemini: Option<String>,
     pub anthropic: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Budget {
     pub limit: f64,
     pub consumed: f64,
@@ -33,16 +33,52 @@ impl Default for Budget {
 
 impl Config {
     pub fn load() -> Result<Self> {
-        let path = Self::config_path()?;
-        if !path.exists() {
-            return Ok(Config::default());
+        let mut config = Config::default();
+
+        // 1. Load from Global Config
+        if let Ok(global_path) = Self::global_config_path() {
+            if global_path.exists() {
+                if let Ok(content) = fs::read_to_string(global_path) {
+                    if let Ok(global_config) = toml::from_str::<Config>(&content) {
+                        config = global_config;
+                    }
+                }
+            }
         }
-        let content = fs::read_to_string(path).context("Failed to read config file")?;
-        toml::from_str(&content).context("Failed to parse config file")
+
+        // 2. Load from Local .guvcode (Overwrites global)
+        let local_path = Path::new(".guvcode");
+        if local_path.exists() {
+            if let Ok(content) = fs::read_to_string(local_path) {
+                if let Ok(local_config) = toml::from_str::<Config>(&content) {
+                    // Merge logic: only overwrite if local has values
+                    if local_config.keys.gemini.is_some() {
+                        config.keys.gemini = local_config.keys.gemini;
+                    }
+                    if local_config.keys.anthropic.is_some() {
+                        config.keys.anthropic = local_config.keys.anthropic;
+                    }
+                    // Overwrite budget if set
+                    if local_config.budget.limit != 10.0 {
+                        config.budget.limit = local_config.budget.limit;
+                    }
+                }
+            }
+        }
+
+        // 3. Load from Env Vars (Highest priority)
+        if let Ok(key) = std::env::var("GEMINI_API_KEY") {
+            config.keys.gemini = Some(key);
+        }
+        if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+            config.keys.anthropic = Some(key);
+        }
+
+        Ok(config)
     }
 
-    pub fn save(&self) -> Result<()> {
-        let path = Self::config_path()?;
+    pub fn save_global(&self) -> Result<()> {
+        let path = Self::global_config_path()?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).context("Failed to create config directory")?;
         }
@@ -50,11 +86,13 @@ impl Config {
         fs::write(path, content).context("Failed to write config file")
     }
 
-    fn config_path() -> Result<PathBuf> {
+    pub fn save_local(&self) -> Result<()> {
+        let content = toml::to_string_pretty(self).context("Failed to serialize local config")?;
+        fs::write(".guvcode", content).context("Failed to write .guvcode file")
+    }
+
+    fn global_config_path() -> Result<PathBuf> {
         if let Some(_proj_dirs) = ProjectDirs::from("com", "guv", "guv-code") {
-             // We can also use a simple home-dir based path if preferred, 
-             // but ProjectDirs is more idiomatic.
-             // For "guv", let's use ~/.guv.toml as requested in spec.
              let home = directories::UserDirs::new()
                 .context("Could not find home directory")?
                 .home_dir()
