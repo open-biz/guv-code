@@ -19,6 +19,7 @@ impl GitManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn commit(path: &Path, message: &str) -> Result<()> {
         Command::new("git")
             .arg("commit")

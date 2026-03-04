@@ -35,6 +35,7 @@ impl Orchestrator {
         tokio::spawn(async move {
             let mut index = RepoIndex::load_or_create(&repo_path).unwrap();
             let _ = index.update(&repo_path);
+            let _ = index.save(&repo_path);
             
             let planner = PlannerAgent::new(&scout_provider_clone, agent_tx_planner.clone());
             // 1. Planning

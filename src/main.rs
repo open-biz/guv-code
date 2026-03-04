@@ -10,15 +10,9 @@ mod ui;
 use clap::{Parser, Subcommand};
 use config::Config;
 use git::GitManager;
-use orchestrator::Orchestrator;
-use ui::AgentStepper;
-use ui::diff_viewer::DiffViewer;
-use agent_logic::AgentMessage;
 use std::env;
 use owo_colors::OwoColorize;
 use miette::{Result, miette};
-use tokio::sync::mpsc;
-use inquire::Text;
 
 #[derive(Parser)]
 #[command(name = "guv")]
@@ -119,70 +113,8 @@ async fn main() -> Result<()> {
             }
         }
         Some(Commands::Chat { message: _ }) | None => {
-            println!("🎩 {}", "GUV-Code Initialized. Ready for orders, Guv'nor.".bold().cyan());
-            
-            let repo_path = env::current_dir().map_err(|e| miette!("{}", e))?;
-
-            loop {
-                let query = match Text::new("Guv'nor?").prompt() {
-                    Ok(m) if !m.trim().is_empty() => m,
-                    _ => break,
-                };
-
-                if query == "exit" || query == "quit" {
-                    break;
-                }
-
-                // Check keys only when trying to run a task
-                let gemini_key = config.keys.gemini.clone();
-                let anthropic_key = config.keys.anthropic.clone();
-
-                if gemini_key.is_none() || anthropic_key.is_none() {
-                    println!("{} {}", "⚠".yellow(), "API keys are missing. Please run:".bold());
-                    println!("  guv-code auth --gemini <key> --anthropic <key>");
-                    println!("  (Add --local to save in this project only)");
-                    continue;
-                }
-
-                let orchestrator = Orchestrator::new(
-                    repo_path.clone(), 
-                    gemini_key.unwrap(), 
-                    anthropic_key.unwrap()
-                );
-
-                let (ui_tx, mut ui_rx) = mpsc::channel(100);
-                let mut stepper = AgentStepper::new();
-                
-                let query_clone = query.clone();
-                let orchestrator_clone = orchestrator.clone();
-                let orch_handle = tokio::spawn(async move {
-                    orchestrator_clone.run(query_clone, ui_tx).await
-                });
-
-                while let Some(msg) = ui_rx.recv().await {
-                    stepper.handle_message(msg.clone());
-                    
-                    if let AgentMessage::CoderCompleted(file, patch) = msg {
-                        let full_path = repo_path.join(&file);
-                        let old_content = std::fs::read_to_string(&full_path).unwrap_or_default();
-                        
-                        DiffViewer::show(&file, &old_content, &patch);
-                        
-                        if Text::new("Apply this patch, Guv'nor? (y/n)").prompt().unwrap_or_default() == "y" {
-                             if GitManager::is_repo(&repo_path) {
-                                let _ = GitManager::auto_stage_all(&repo_path);
-                             }
-                             let _ = std::fs::write(full_path, patch);
-                             if GitManager::is_repo(&repo_path) {
-                                let _ = GitManager::commit(&repo_path, &format!("guv: {}", query));
-                             }
-                             println!("{} {}", "✅".green(), "Applied and committed.".dimmed());
-                        }
-                    }
-                }
-
-                let _ = orch_handle.await;
-            }
+            // THE WHOLE THING LOADS AS A TUI NOW
+            ui::app::start_tui(config).await.map_err(|e| miette!("{}", e))?;
         }
     }
 

@@ -4,6 +4,7 @@ use std::path::Path;
 
 pub struct CommandResult {
     pub success: bool,
+    #[allow(dead_code)]
     pub stdout: String,
     pub stderr: String,
 }
