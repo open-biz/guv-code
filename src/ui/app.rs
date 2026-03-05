@@ -26,6 +26,7 @@ pub struct App {
     pub repo_path: std::path::PathBuf,
     pub config: Config,
     pub orchestrator: Option<Orchestrator>,
+    pub is_streaming: bool,
 }
 
 impl App {
@@ -42,6 +43,7 @@ impl App {
             } else {
                 None
             },
+            is_streaming: false,
         }
     }
 
@@ -51,7 +53,7 @@ impl App {
         loop {
             terminal.draw(|f| self.ui(f))?;
 
-            if event::poll(std::time::Duration::from_millis(50))? {
+            if event::poll(std::time::Duration::from_millis(16))? { // ~60fps poll
                 if let Event::Key(key) = event::read()? {
                     match key.code {
                         KeyCode::Char(c) => {
@@ -61,6 +63,7 @@ impl App {
                             self.input.pop();
                         }
                         KeyCode::Enter => {
+                            if self.input.is_empty() { continue; }
                             let query = self.input.drain(..).collect::<String>();
                             if query == "exit" || query == "quit" {
                                 return Ok(());
@@ -80,6 +83,7 @@ impl App {
                             }
                         }
                         KeyCode::Esc => {
+                            // Cancel logic could be added here
                             return Ok(());
                         }
                         _ => {}
@@ -96,22 +100,52 @@ impl App {
 
     fn handle_agent_message(&mut self, msg: AgentMessage) {
         match msg {
-            AgentMessage::PlanStarted => self.agent_logs.push("Planner: Analyzing...".to_string()),
-            AgentMessage::PlanCompleted(files) => self.agent_logs.push(format!("Planner: Selected {} files.", files.len())),
-            AgentMessage::CoderStarted(file) => self.agent_logs.push(format!("Coder: Patching {}...", file)),
-            AgentMessage::CoderUpdate(_) => {}, // Could animate something
+            AgentMessage::PlanStarted => {
+                self.agent_logs.push("✔ Planner: Analyzing...".to_string());
+            }
+            AgentMessage::PlanCompleted(files) => {
+                self.agent_logs.push(format!("✔ Planner: Identified {} files.", files.len()));
+            }
+            AgentMessage::CoderStarted(file) => {
+                self.agent_logs.push(format!("⠧ Coder: Patching {}...", file));
+                self.messages.push(format!("Guv ({}): ", file));
+                self.is_streaming = true;
+            }
+            AgentMessage::CoderUpdate(text) => {
+                if let Some(last) = self.messages.last_mut() {
+                    last.push_str(&text);
+                }
+            }
             AgentMessage::CoderCompleted(file, _) => {
-                self.agent_logs.push(format!("Coder: Finished {}.", file));
-                self.messages.push(format!("Guv: Patch ready for {}.", file));
+                self.is_streaming = false;
+                if let Some(last) = self.agent_logs.last_mut() {
+                    if last.contains(&file) {
+                        *last = format!("✔ Coder: Finished {}.", file);
+                    }
+                }
             },
-            AgentMessage::ReviewStarted(file) => self.agent_logs.push(format!("Reviewer: Validating {}...", file)),
-            AgentMessage::ReviewPassed(file) => self.agent_logs.push(format!("Reviewer: {} passed build check.", file)),
+            AgentMessage::ReviewStarted(file) => {
+                self.agent_logs.push(format!("⠧ Reviewer: Validating {}...", file));
+            }
+            AgentMessage::ReviewPassed(file) => {
+                if let Some(last) = self.agent_logs.last_mut() {
+                    if last.contains(&file) {
+                        *last = format!("✔ Reviewer: {} is clean.", file);
+                    }
+                }
+            }
             AgentMessage::ReviewFailed(file, err) => {
-                self.agent_logs.push(format!("Reviewer: {} FAILED.", file));
+                if let Some(last) = self.agent_logs.last_mut() {
+                    if last.contains(&file) {
+                        *last = format!("✘ Reviewer: {} FAILED.", file);
+                    }
+                }
                 self.messages.push(format!("Guv (Error): {} check failed: {}", file, err));
             },
-            AgentMessage::Error(e) => self.messages.push(format!("Error: {}", e)),
-            _ => {}
+            AgentMessage::Error(e) => {
+                self.messages.push(format!("Error: {}", e));
+                self.is_streaming = false;
+            }
         }
     }
 
@@ -119,59 +153,73 @@ impl App {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3), // Header
+                Constraint::Length(1), // Header
                 Constraint::Min(3),    // Main content
                 Constraint::Length(3), // Input
                 Constraint::Length(1), // Status
             ])
             .split(f.size());
 
-        // Header
-        let header = Paragraph::new(Line::from(vec![
-            Span::styled(" 🎩 GUV-Code ", Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan)),
-            Span::raw(" - Right away, Guv'nor. "),
-        ]))
-        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+        // Header (Crush-style minimal)
+        let header = Paragraph::new(Span::styled(" 🎩 GUV-Code v0.2.0 ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
         f.render_widget(header, chunks[0]);
 
         let main_chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
             .split(chunks[1]);
 
-        // Chat History
-        let chat_items: Vec<ListItem> = self.messages.iter().rev().take(f.size().height as usize)
+        // Chat History (Codebuff-style with clear separators)
+        let chat_items: Vec<ListItem> = self.messages.iter()
             .map(|m| {
-                let color = if m.starts_with("User:") { Color::Yellow } else { Color::White };
-                ListItem::new(Line::from(Span::styled(m, Style::default().fg(color))))
+                let (prefix, color) = if m.starts_with("User:") {
+                    (" 👤 ", Color::Yellow)
+                } else if m.starts_with("Guv (") {
+                    (" 🪄 ", Color::Cyan)
+                } else {
+                    (" 🎩 ", Color::White)
+                };
+                
+                ListItem::new(Line::from(vec![
+                    Span::styled(prefix, Style::default().fg(color)),
+                    Span::styled(m, Style::default().fg(Color::White)),
+                ]))
             }).collect();
+        
         let chat = List::new(chat_items)
-            .block(Block::default().borders(Borders::ALL).title(" Chat "))
+            .block(Block::default().borders(Borders::LEFT).border_style(Style::default().fg(Color::DarkGray)).title(" Conversation "))
             .style(Style::default().fg(Color::White));
         f.render_widget(chat, main_chunks[0]);
 
-        // Agent Logs
-        let log_items: Vec<ListItem> = self.agent_logs.iter().rev().take(f.size().height as usize)
-            .map(|m| ListItem::new(Line::from(Span::styled(m, Style::default().fg(Color::DarkGray)))))
+        // Agent Activity (Sleek right sidebar)
+        let log_items: Vec<ListItem> = self.agent_logs.iter().rev()
+            .map(|m| {
+                let color = if m.starts_with("✔") { Color::Green } else if m.starts_with("✘") { Color::Red } else { Color::Blue };
+                ListItem::new(Line::from(Span::styled(m, Style::default().fg(color).add_modifier(Modifier::DIM))))
+            })
             .collect();
         let logs = List::new(log_items)
-            .block(Block::default().borders(Borders::ALL).title(" Agent Activity "))
+            .block(Block::default().borders(Borders::LEFT).border_style(Style::default().fg(Color::DarkGray)).title(" Activity "))
             .style(Style::default().fg(Color::DarkGray));
         f.render_widget(logs, main_chunks[1]);
 
-        // Input
-        let input = Paragraph::new(self.input.as_str())
-            .style(Style::default().fg(Color::Cyan))
-            .block(Block::default().borders(Borders::ALL).title(" Guv'nor? "));
+        // Input Box (Sleek, rounded feel via unicode)
+        let input_text = if self.input.is_empty() && !self.is_streaming {
+            " Type your instructions, Guv'nor... ".to_string()
+        } else {
+            self.input.clone()
+        };
+        let input_style = if self.input.is_empty() { Style::default().fg(Color::DarkGray) } else { Style::default().fg(Color::Yellow) };
+        
+        let input = Paragraph::new(input_text)
+            .style(input_style)
+            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)).title(" Prompt "));
         f.render_widget(input, chunks[2]);
 
-        // Status
-        let status_text = format!(" [ Repo: {} ] [ Gemini: {} ] [ Anthropic: {} ] ", 
-            self.repo_path.file_name().unwrap_or_default().to_string_lossy(),
-            if self.config.keys.gemini.is_some() { "OK" } else { "MISSING" },
-            if self.config.keys.anthropic.is_some() { "OK" } else { "MISSING" }
-        );
-        let status = Paragraph::new(Span::styled(status_text, Style::default().bg(Color::Blue).fg(Color::White)));
+        // Status Line
+        let status_text = format!(" [ Repo: {} ] [ Gemini: Pro ] [ Opus: Active ] ", 
+            self.repo_path.file_name().unwrap_or_default().to_string_lossy());
+        let status = Paragraph::new(Span::styled(status_text, Style::default().fg(Color::DarkGray)));
         f.render_widget(status, chunks[3]);
     }
 }

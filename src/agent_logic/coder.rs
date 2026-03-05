@@ -33,9 +33,15 @@ impl<'a> CoderAgent<'a> {
             
             let mut full_patch = String::new();
             while let Some(chunk) = stream.recv().await {
-                if let Ok(text) = chunk {
-                    full_patch.push_str(&text);
-                    let _ = self.sender.send(AgentMessage::CoderUpdate(text)).await;
+                match chunk {
+                    Ok(text) => {
+                        full_patch.push_str(&text);
+                        let _ = self.sender.send(AgentMessage::CoderUpdate(text)).await;
+                    }
+                    Err(e) => {
+                        let _ = self.sender.send(AgentMessage::Error(e.to_string())).await;
+                        break;
+                    }
                 }
             }
 
