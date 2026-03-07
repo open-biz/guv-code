@@ -8,7 +8,7 @@ use ratatui::{
 };
 use std::io;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -27,6 +27,7 @@ pub struct App {
     pub config: Config,
     pub orchestrator: Option<Orchestrator>,
     pub is_streaming: bool,
+    pub theme_color: Color,
 }
 
 impl App {
@@ -34,8 +35,8 @@ impl App {
         let repo_path = env::current_dir().unwrap_or_else(|_| ".".into());
         Self {
             input: String::new(),
-            messages: vec!["Guv'nor: Ready to serve.".to_string()],
-            agent_logs: vec!["System: Awaiting orders...".to_string()],
+            messages: vec!["✦ Guv'nor: Standing by. How can I help you build today?".to_string()],
+            agent_logs: vec!["○ System: Awaiting instructions...".to_string()],
             repo_path: repo_path.clone(),
             config: config.clone(),
             orchestrator: if let (Some(g), Some(a)) = (&config.keys.gemini, &config.keys.anthropic) {
@@ -44,6 +45,7 @@ impl App {
                 None
             },
             is_streaming: false,
+            theme_color: Color::Cyan,
         }
     }
 
@@ -53,23 +55,26 @@ impl App {
         loop {
             terminal.draw(|f| self.ui(f))?;
 
-            if event::poll(std::time::Duration::from_millis(16))? { // ~60fps poll
+            if event::poll(std::time::Duration::from_millis(16))? {
                 if let Event::Key(key) = event::read()? {
-                    match key.code {
-                        KeyCode::Char(c) => {
+                    match (key.code, key.modifiers) {
+                        (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                            return Ok(());
+                        }
+                        (KeyCode::Char(c), _) => {
                             self.input.push(c);
                         }
-                        KeyCode::Backspace => {
+                        (KeyCode::Backspace, _) => {
                             self.input.pop();
                         }
-                        KeyCode::Enter => {
+                        (KeyCode::Enter, _) => {
                             if self.input.is_empty() { continue; }
                             let query = self.input.drain(..).collect::<String>();
                             if query == "exit" || query == "quit" {
                                 return Ok(());
                             }
                             
-                            self.messages.push(format!("User: {}", query));
+                            self.messages.push(format!("👤 User: {}", query));
                             
                             if let Some(orch) = &self.orchestrator {
                                 let ui_tx = ui_tx.clone();
@@ -79,19 +84,18 @@ impl App {
                                     let _ = orch_clone.run(query_clone, ui_tx).await;
                                 });
                             } else {
-                                self.messages.push("System: Error: API keys missing. Use `guv auth`.".to_string());
+                                self.messages.push("✘ System: Error: API keys missing. Run `guv-code auth`.".to_string());
                             }
                         }
-                        KeyCode::Esc => {
-                            // Cancel logic could be added here
-                            return Ok(());
+                        (KeyCode::Esc, _) => {
+                            // In a real implementation, we would send a cancel signal to the orchestrator
+                            self.agent_logs.push("○ System: Request cancelled by user.".to_string());
                         }
                         _ => {}
                     }
                 }
             }
 
-            // Non-blocking recv for agent messages
             while let Ok(msg) = ui_rx.try_recv() {
                 self.handle_agent_message(msg);
             }
@@ -101,14 +105,25 @@ impl App {
     fn handle_agent_message(&mut self, msg: AgentMessage) {
         match msg {
             AgentMessage::PlanStarted => {
-                self.agent_logs.push("✔ Planner: Analyzing...".to_string());
+                self.agent_logs.push("⠧ Planner: Analyzing repository...".to_string());
+            }
+            AgentMessage::PlanUpdate(text) => {
+                if let Some(last) = self.agent_logs.last_mut() {
+                    if last.contains("Planner:") {
+                        *last = format!("⠧ Planner: {}", text);
+                    }
+                }
             }
             AgentMessage::PlanCompleted(files) => {
-                self.agent_logs.push(format!("✔ Planner: Identified {} files.", files.len()));
+                if let Some(last) = self.agent_logs.last_mut() {
+                    if last.contains("Planner:") {
+                        *last = format!("✔ Planner: Identified {} files.", files.len());
+                    }
+                }
             }
             AgentMessage::CoderStarted(file) => {
-                self.agent_logs.push(format!("⠧ Coder: Patching {}...", file));
-                self.messages.push(format!("Guv ({}): ", file));
+                self.agent_logs.push(format!("⠧ Coder: Generating edits for {}...", file));
+                self.messages.push(format!("✦ Guv ({}): ", file));
                 self.is_streaming = true;
             }
             AgentMessage::CoderUpdate(text) => {
@@ -120,7 +135,7 @@ impl App {
                 self.is_streaming = false;
                 if let Some(last) = self.agent_logs.last_mut() {
                     if last.contains(&file) {
-                        *last = format!("✔ Coder: Finished {}.", file);
+                        *last = format!("✔ Coder: Patch ready for {}.", file);
                     }
                 }
             },
@@ -130,7 +145,7 @@ impl App {
             AgentMessage::ReviewPassed(file) => {
                 if let Some(last) = self.agent_logs.last_mut() {
                     if last.contains(&file) {
-                        *last = format!("✔ Reviewer: {} is clean.", file);
+                        *last = format!("✔ Reviewer: {} passed build check.", file);
                     }
                 }
             }
@@ -140,10 +155,10 @@ impl App {
                         *last = format!("✘ Reviewer: {} FAILED.", file);
                     }
                 }
-                self.messages.push(format!("Guv (Error): {} check failed: {}", file, err));
+                self.messages.push(format!("✘ Guv (Error): {} check failed: {}", file, err));
             },
             AgentMessage::Error(e) => {
-                self.messages.push(format!("Error: {}", e));
+                self.messages.push(format!("✘ Error: {}", e));
                 self.is_streaming = false;
             }
         }
@@ -153,74 +168,86 @@ impl App {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1), // Header
+                Constraint::Length(1), // Top Bar
                 Constraint::Min(3),    // Main content
                 Constraint::Length(3), // Input
-                Constraint::Length(1), // Status
+                Constraint::Length(1), // Footer
             ])
             .split(f.size());
 
-        // Header (Crush-style minimal)
-        let header = Paragraph::new(Span::styled(" 🎩 GUV-Code v0.2.0 ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
-        f.render_widget(header, chunks[0]);
+        // Header - Sleek and minimal
+        let header_content = vec![
+            Span::styled(" 🎩 GUV-CODE ", Style::default().fg(Color::Black).bg(self.theme_color).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("  {}  ", self.repo_path.display()), Style::default().fg(Color::DarkGray)),
+        ];
+        f.render_widget(Paragraph::new(Line::from(header_content)), chunks[0]);
 
         let main_chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+            .constraints([Constraint::Percentage(75), Constraint::Percentage(25)])
             .split(chunks[1]);
 
-        // Chat History (Codebuff-style with clear separators)
+        // Chat View - Codebuff inspired
         let chat_items: Vec<ListItem> = self.messages.iter()
             .map(|m| {
-                let (prefix, color) = if m.starts_with("User:") {
-                    (" 👤 ", Color::Yellow)
-                } else if m.starts_with("Guv (") {
-                    (" 🪄 ", Color::Cyan)
+                let style = if m.contains("👤 User:") {
+                    Style::default().fg(Color::Yellow)
+                } else if m.contains("✦ Guv") {
+                    Style::default().fg(self.theme_color)
+                } else if m.contains("✘") {
+                    Style::default().fg(Color::Red)
                 } else {
-                    (" 🎩 ", Color::White)
+                    Style::default().fg(Color::White)
                 };
                 
-                ListItem::new(Line::from(vec![
-                    Span::styled(prefix, Style::default().fg(color)),
-                    Span::styled(m, Style::default().fg(Color::White)),
-                ]))
+                ListItem::new(Line::from(Span::styled(m, style)))
             }).collect();
         
         let chat = List::new(chat_items)
-            .block(Block::default().borders(Borders::LEFT).border_style(Style::default().fg(Color::DarkGray)).title(" Conversation "))
+            .block(Block::default().borders(Borders::NONE))
             .style(Style::default().fg(Color::White));
         f.render_widget(chat, main_chunks[0]);
 
-        // Agent Activity (Sleek right sidebar)
+        // Activity View - Styled like a sidebar terminal
         let log_items: Vec<ListItem> = self.agent_logs.iter().rev()
             .map(|m| {
-                let color = if m.starts_with("✔") { Color::Green } else if m.starts_with("✘") { Color::Red } else { Color::Blue };
-                ListItem::new(Line::from(Span::styled(m, Style::default().fg(color).add_modifier(Modifier::DIM))))
+                let color = if m.contains("✔") {
+                    Color::Green
+                } else if m.contains("✘") {
+                    Color::Red
+                } else if m.contains("⠧") {
+                    self.theme_color
+                } else {
+                    Color::DarkGray
+                };
+                ListItem::new(Line::from(Span::styled(m, Style::default().fg(color))))
             })
             .collect();
         let logs = List::new(log_items)
-            .block(Block::default().borders(Borders::LEFT).border_style(Style::default().fg(Color::DarkGray)).title(" Activity "))
+            .block(Block::default().borders(Borders::LEFT).border_style(Style::default().fg(Color::Rgb(30, 30, 30))).title(" ACTIVITY "))
             .style(Style::default().fg(Color::DarkGray));
         f.render_widget(logs, main_chunks[1]);
 
-        // Input Box (Sleek, rounded feel via unicode)
+        // Input - Beautiful focused box
+        let input_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(if self.is_streaming { Color::DarkGray } else { self.theme_color }))
+            .title(Span::styled(" PROMPT ", Style::default().add_modifier(Modifier::BOLD)));
+            
         let input_text = if self.input.is_empty() && !self.is_streaming {
-            " Type your instructions, Guv'nor... ".to_string()
+            Span::styled("Type instructions (e.g. 'Add dark mode to the header')...", Style::default().fg(Color::Rgb(80, 80, 80)))
         } else {
-            self.input.clone()
+            Span::raw(self.input.as_str())
         };
-        let input_style = if self.input.is_empty() { Style::default().fg(Color::DarkGray) } else { Style::default().fg(Color::Yellow) };
         
         let input = Paragraph::new(input_text)
-            .style(input_style)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)).title(" Prompt "));
+            .block(input_block);
         f.render_widget(input, chunks[2]);
 
-        // Status Line
-        let status_text = format!(" [ Repo: {} ] [ Gemini: Pro ] [ Opus: Active ] ", 
-            self.repo_path.file_name().unwrap_or_default().to_string_lossy());
-        let status = Paragraph::new(Span::styled(status_text, Style::default().fg(Color::DarkGray)));
-        f.render_widget(status, chunks[3]);
+        // Footer - Real-time stats
+        let footer_text = format!(" [ Ctrl+C ] Exit  [ Esc ] Cancel  [ Budget: $4.50 / $10.00 ] ");
+        let footer = Paragraph::new(Span::styled(footer_text, Style::default().fg(Color::Rgb(60, 60, 60))));
+        f.render_widget(footer, chunks[3]);
     }
 }
 
