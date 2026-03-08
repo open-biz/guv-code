@@ -1,0 +1,23 @@
+{
+  "endOfLine": "lf",
+  "semi": false,
+  "singleQuote": true,
+  "tabWidth": 2,
+  "trailingComma": "all",
+  "importOrder": [
+    "^(react/(.*)$)|^(react$)",
+    "^(next/(.*)$)|^(next$)",
+    "<THIRD_PARTY_MODULES>",
+    "",
+    "^types$",
+    "^@/types/(.*)$",
+    "^@/lib/(.*)$",
+    "^@/hooks/(.*)$",
+    "^@/components/ui/(.*)$",
+    "^@/components/(.*)$",
+    "^@/styles/(.*)$",
+    "^@/app/(.*)$",
+    "",
+    "^[./]"
+  ]
+}
