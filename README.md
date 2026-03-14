@@ -5,6 +5,10 @@
 [![Version](https://img.shields.io/crates/v/guv-code?style=flat-square)](#)
 [![Vibes](https://img.shields.io/badge/Vibes-Immaculate-FF1493.svg?style=flat-square)](#)
 
+<p align="center">
+  <img src="GuvCode.png" alt="GUV-Code Hero" width="800px">
+</p>
+
 **"Right away, Guv'nor."**
 
 GUV-Code is a blazingly fast, 100% Rust-native AI coding agent built for your terminal. It acts as your hyper-competent right-hand fixer, designed to parse massive codebases instantly, plan architectures, and surgically apply AST-aware code edits. 
