@@ -74,7 +74,7 @@ const plans = [
 
 export default function PricingPage() {
   return (
-    <div className="container mx-auto px-4 py-20 md:py-28">
+    <div className="container mx-auto px-4 py-20 md:py-28 page-enter">
       <div className="text-center mb-16">
         <h1 className="section-heading mb-4">
           Simple pricing

@@ -16,7 +16,7 @@ import { siteConfig } from '@/lib/constant'
 
 export default function LoginPage() {
   return (
-    <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4">
+    <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4 page-enter">
       <div className="w-full max-w-md space-y-6">
         <Card className="border-border/50 bg-card/80 backdrop-blur">
           <CardHeader className="text-center pb-2">

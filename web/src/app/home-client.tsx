@@ -75,7 +75,7 @@ export default function HomeClient() {
               Open source — star us on GitHub
             </Link>
           </div>
-          <h1 className="hero-heading mb-6 text-white">
+          <h1 className="hero-heading mb-6 shimmer-text">
             Ship code faster.{' '}
             <br className="hidden sm:block" />
             Let Guv handle it.
