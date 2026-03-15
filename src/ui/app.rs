@@ -1,9 +1,9 @@
 use ratatui::{
     backend::Backend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame, Terminal,
 };
 use std::io;
@@ -19,33 +19,68 @@ use crate::config::Config;
 use anyhow::Result;
 use std::env;
 
+const ACCENT: Color = Color::Cyan;
+const DIM: Color = Color::Rgb(80, 80, 80);
+const BORDER_DIM: Color = Color::Rgb(40, 40, 40);
+const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+#[derive(Clone)]
+enum MsgKind {
+    User,
+    Agent,
+    Error,
+    System,
+}
+
+#[derive(Clone)]
+struct ChatMsg {
+    kind: MsgKind,
+    text: String,
+}
+
 pub struct App {
-    pub input: String,
-    pub messages: Vec<String>,
-    pub agent_logs: Vec<String>,
-    pub repo_path: std::path::PathBuf,
-    pub config: Config,
-    pub orchestrator: Option<Orchestrator>,
-    pub is_streaming: bool,
-    pub theme_color: Color,
+    input: String,
+    cursor_pos: usize,
+    messages: Vec<ChatMsg>,
+    agent_logs: Vec<(LogStatus, String)>,
+    chat_scroll: u16,
+    repo_path: std::path::PathBuf,
+    config: Config,
+    orchestrator: Option<Orchestrator>,
+    is_streaming: bool,
+    tick: usize,
+}
+
+#[derive(Clone, Copy)]
+enum LogStatus {
+    Pending,
+    Done,
+    Failed,
+    Info,
 }
 
 impl App {
     pub fn new(config: Config) -> Self {
         let repo_path = env::current_dir().unwrap_or_else(|_| ".".into());
+        let orchestrator = if let (Some(g), Some(a)) = (&config.keys.gemini, &config.keys.anthropic) {
+            Some(Orchestrator::new(repo_path.clone(), g.clone(), a.clone()))
+        } else {
+            None
+        };
         Self {
             input: String::new(),
-            messages: vec!["✦ Guv'nor: Standing by. How can I help you build today?".to_string()],
-            agent_logs: vec!["○ System: Awaiting instructions...".to_string()],
-            repo_path: repo_path.clone(),
-            config: config.clone(),
-            orchestrator: if let (Some(g), Some(a)) = (&config.keys.gemini, &config.keys.anthropic) {
-                Some(Orchestrator::new(repo_path, g.clone(), a.clone()))
-            } else {
-                None
-            },
+            cursor_pos: 0,
+            messages: vec![ChatMsg {
+                kind: MsgKind::Agent,
+                text: "Standing by. What are we building?".into(),
+            }],
+            agent_logs: vec![(LogStatus::Info, "Awaiting instructions".into())],
+            chat_scroll: 0,
+            repo_path,
+            config,
+            orchestrator,
             is_streaming: false,
-            theme_color: Color::Cyan,
+            tick: 0,
         }
     }
 
@@ -53,43 +88,98 @@ impl App {
         let (ui_tx, mut ui_rx) = mpsc::channel(100);
 
         loop {
+            self.tick = self.tick.wrapping_add(1);
             terminal.draw(|f| self.ui(f))?;
 
-            if event::poll(std::time::Duration::from_millis(16))? {
+            if event::poll(std::time::Duration::from_millis(50))? {
                 if let Event::Key(key) = event::read()? {
                     match (key.code, key.modifiers) {
-                        (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-                            return Ok(());
+                        (KeyCode::Char('c'), KeyModifiers::CONTROL) => return Ok(()),
+                        (KeyCode::Char('d'), KeyModifiers::CONTROL) => return Ok(()),
+                        (KeyCode::Char(c), _) if !self.is_streaming => {
+                            self.input.insert(self.cursor_pos, c);
+                            self.cursor_pos += c.len_utf8();
                         }
-                        (KeyCode::Char(c), _) => {
-                            self.input.push(c);
+                        (KeyCode::Backspace, _) if !self.is_streaming => {
+                            if self.cursor_pos > 0 {
+                                let prev = self.input[..self.cursor_pos]
+                                    .chars()
+                                    .last()
+                                    .map(|c| c.len_utf8())
+                                    .unwrap_or(0);
+                                self.cursor_pos -= prev;
+                                self.input.remove(self.cursor_pos);
+                            }
                         }
-                        (KeyCode::Backspace, _) => {
-                            self.input.pop();
+                        (KeyCode::Delete, _) if !self.is_streaming => {
+                            if self.cursor_pos < self.input.len() {
+                                self.input.remove(self.cursor_pos);
+                            }
                         }
-                        (KeyCode::Enter, _) => {
-                            if self.input.is_empty() { continue; }
-                            let query = self.input.drain(..).collect::<String>();
-                            if query == "exit" || query == "quit" {
+                        (KeyCode::Left, _) => {
+                            if self.cursor_pos > 0 {
+                                let prev = self.input[..self.cursor_pos]
+                                    .chars()
+                                    .last()
+                                    .map(|c| c.len_utf8())
+                                    .unwrap_or(0);
+                                self.cursor_pos -= prev;
+                            }
+                        }
+                        (KeyCode::Right, _) => {
+                            if self.cursor_pos < self.input.len() {
+                                let next = self.input[self.cursor_pos..]
+                                    .chars()
+                                    .next()
+                                    .map(|c| c.len_utf8())
+                                    .unwrap_or(0);
+                                self.cursor_pos += next;
+                            }
+                        }
+                        (KeyCode::Home, _) => self.cursor_pos = 0,
+                        (KeyCode::End, _) => self.cursor_pos = self.input.len(),
+                        (KeyCode::Up, _) => {
+                            self.chat_scroll = self.chat_scroll.saturating_add(1);
+                        }
+                        (KeyCode::Down, _) => {
+                            self.chat_scroll = self.chat_scroll.saturating_sub(1);
+                        }
+                        (KeyCode::Enter, _) if !self.is_streaming => {
+                            if self.input.is_empty() {
+                                continue;
+                            }
+                            let query: String = self.input.drain(..).collect();
+                            self.cursor_pos = 0;
+                            self.chat_scroll = 0;
+
+                            if query == "exit" || query == "quit" || query == "q" {
                                 return Ok(());
                             }
-                            
-                            self.messages.push(format!("👤 User: {}", query));
-                            
+
+                            self.messages.push(ChatMsg {
+                                kind: MsgKind::User,
+                                text: query.clone(),
+                            });
+
                             if let Some(orch) = &self.orchestrator {
-                                let ui_tx = ui_tx.clone();
-                                let query_clone = query.clone();
-                                let orch_clone = orch.clone();
+                                let tx = ui_tx.clone();
+                                let q = query.clone();
+                                let o = orch.clone();
                                 tokio::spawn(async move {
-                                    let _ = orch_clone.run(query_clone, ui_tx).await;
+                                    let _ = o.run(q, tx).await;
                                 });
                             } else {
-                                self.messages.push("✘ System: Error: API keys missing. Run `guv auth`.".to_string());
+                                self.messages.push(ChatMsg {
+                                    kind: MsgKind::Error,
+                                    text: "API keys not configured. Run `guv auth`.".into(),
+                                });
                             }
                         }
                         (KeyCode::Esc, _) => {
-                            // In a real implementation, we would send a cancel signal to the orchestrator
-                            self.agent_logs.push("○ System: Request cancelled by user.".to_string());
+                            if self.is_streaming {
+                                self.agent_logs.push((LogStatus::Info, "Cancelled by user".into()));
+                                self.is_streaming = false;
+                            }
                         }
                         _ => {}
                     }
@@ -105,149 +195,233 @@ impl App {
     fn handle_agent_message(&mut self, msg: AgentMessage) {
         match msg {
             AgentMessage::PlanStarted => {
-                self.agent_logs.push("⠧ Planner: Analyzing repository...".to_string());
+                self.is_streaming = true;
+                self.agent_logs.push((LogStatus::Pending, "Scout: Analyzing repo...".into()));
             }
             AgentMessage::PlanUpdate(text) => {
                 if let Some(last) = self.agent_logs.last_mut() {
-                    if last.contains("Planner:") {
-                        *last = format!("⠧ Planner: {}", text);
+                    if matches!(last.0, LogStatus::Pending) {
+                        last.1 = format!("Scout: {}", text);
                     }
                 }
             }
             AgentMessage::PlanCompleted(files) => {
                 if let Some(last) = self.agent_logs.last_mut() {
-                    if last.contains("Planner:") {
-                        *last = format!("✔ Planner: Identified {} files.", files.len());
-                    }
+                    *last = (LogStatus::Done, format!("Scout: {} files identified", files.len()));
                 }
             }
             AgentMessage::CoderStarted(file) => {
-                self.agent_logs.push(format!("⠧ Coder: Generating edits for {}...", file));
-                self.messages.push(format!("✦ Guv ({}): ", file));
+                self.agent_logs.push((LogStatus::Pending, format!("Coder: {}", file)));
+                self.messages.push(ChatMsg {
+                    kind: MsgKind::Agent,
+                    text: String::new(),
+                });
                 self.is_streaming = true;
             }
             AgentMessage::CoderUpdate(text) => {
                 if let Some(last) = self.messages.last_mut() {
-                    last.push_str(&text);
+                    last.text.push_str(&text);
                 }
+                self.chat_scroll = 0;
             }
             AgentMessage::CoderCompleted(file, _) => {
                 self.is_streaming = false;
                 if let Some(last) = self.agent_logs.last_mut() {
-                    if last.contains(&file) {
-                        *last = format!("✔ Coder: Patch ready for {}.", file);
-                    }
+                    *last = (LogStatus::Done, format!("Coder: {} done", file));
                 }
-            },
+            }
             AgentMessage::ReviewStarted(file) => {
-                self.agent_logs.push(format!("⠧ Reviewer: Validating {}...", file));
+                self.agent_logs.push((LogStatus::Pending, format!("Review: {}", file)));
             }
             AgentMessage::ReviewPassed(file) => {
                 if let Some(last) = self.agent_logs.last_mut() {
-                    if last.contains(&file) {
-                        *last = format!("✔ Reviewer: {} passed build check.", file);
-                    }
+                    *last = (LogStatus::Done, format!("Review: {} passed", file));
                 }
             }
             AgentMessage::ReviewFailed(file, err) => {
                 if let Some(last) = self.agent_logs.last_mut() {
-                    if last.contains(&file) {
-                        *last = format!("✘ Reviewer: {} FAILED.", file);
-                    }
+                    *last = (LogStatus::Failed, format!("Review: {} failed", file));
                 }
-                self.messages.push(format!("✘ Guv (Error): {} check failed: {}", file, err));
-            },
+                self.messages.push(ChatMsg {
+                    kind: MsgKind::Error,
+                    text: format!("{}: {}", file, err),
+                });
+            }
             AgentMessage::Error(e) => {
-                self.messages.push(format!("✘ Error: {}", e));
+                self.messages.push(ChatMsg {
+                    kind: MsgKind::Error,
+                    text: e,
+                });
                 self.is_streaming = false;
             }
         }
     }
 
+    fn spinner(&self) -> &str {
+        SPINNER_FRAMES[(self.tick / 2) % SPINNER_FRAMES.len()]
+    }
+
     fn ui(&self, f: &mut Frame) {
-        let chunks = Layout::default()
+        let area = f.size();
+
+        let root = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1), // Top Bar
-                Constraint::Min(3),    // Main content
-                Constraint::Length(3), // Input
-                Constraint::Length(1), // Footer
+                Constraint::Length(1),
+                Constraint::Min(4),
+                Constraint::Length(3),
+                Constraint::Length(1),
             ])
-            .split(f.size());
+            .split(area);
 
-        // Header - Sleek and minimal
-        let header_content = vec![
-            Span::styled(" 🎩 GUVCODE ", Style::default().fg(Color::Black).bg(self.theme_color).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("  {}  ", self.repo_path.display()), Style::default().fg(Color::DarkGray)),
+        self.render_header(f, root[0]);
+        self.render_main(f, root[1]);
+        self.render_input(f, root[2]);
+        self.render_footer(f, root[3]);
+    }
+
+    fn render_header(&self, f: &mut Frame, area: Rect) {
+        let mut spans = vec![
+            Span::styled(" 🎩 guv ", Style::default().fg(Color::Black).bg(ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" {} ", self.repo_path.display()), Style::default().fg(DIM)),
         ];
-        f.render_widget(Paragraph::new(Line::from(header_content)), chunks[0]);
+        if self.is_streaming {
+            spans.push(Span::styled(
+                format!(" {} working... ", self.spinner()),
+                Style::default().fg(ACCENT),
+            ));
+        }
+        f.render_widget(Paragraph::new(Line::from(spans)), area);
+    }
 
-        let main_chunks = Layout::default()
+    fn render_main(&self, f: &mut Frame, area: Rect) {
+        let cols = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(75), Constraint::Percentage(25)])
-            .split(chunks[1]);
+            .constraints([Constraint::Min(40), Constraint::Length(30)])
+            .split(area);
 
-        // Chat View - Codebuff inspired
-        let chat_items: Vec<ListItem> = self.messages.iter()
-            .map(|m| {
-                let style = if m.contains("👤 User:") {
-                    Style::default().fg(Color::Yellow)
-                } else if m.contains("✦ Guv") {
-                    Style::default().fg(self.theme_color)
-                } else if m.contains("✘") {
-                    Style::default().fg(Color::Red)
-                } else {
-                    Style::default().fg(Color::White)
-                };
-                
-                ListItem::new(Line::from(Span::styled(m, style)))
-            }).collect();
-        
-        let chat = List::new(chat_items)
-            .block(Block::default().borders(Borders::NONE))
-            .style(Style::default().fg(Color::White));
-        f.render_widget(chat, main_chunks[0]);
+        self.render_chat(f, cols[0]);
+        self.render_activity(f, cols[1]);
+    }
 
-        // Activity View - Styled like a sidebar terminal
-        let log_items: Vec<ListItem> = self.agent_logs.iter().rev()
-            .map(|m| {
-                let color = if m.contains("✔") {
-                    Color::Green
-                } else if m.contains("✘") {
-                    Color::Red
-                } else if m.contains("⠧") {
-                    self.theme_color
-                } else {
-                    Color::DarkGray
-                };
-                ListItem::new(Line::from(Span::styled(m, Style::default().fg(color))))
-            })
-            .collect();
-        let logs = List::new(log_items)
-            .block(Block::default().borders(Borders::LEFT).border_style(Style::default().fg(Color::Rgb(30, 30, 30))).title(" ACTIVITY "))
-            .style(Style::default().fg(Color::DarkGray));
-        f.render_widget(logs, main_chunks[1]);
+    fn render_chat(&self, f: &mut Frame, area: Rect) {
+        let inner = Block::default()
+            .borders(Borders::NONE)
+            .style(Style::default());
+        let inner_area = inner.inner(area);
 
-        // Input - Beautiful focused box
-        let input_block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(if self.is_streaming { Color::DarkGray } else { self.theme_color }))
-            .title(Span::styled(" PROMPT ", Style::default().add_modifier(Modifier::BOLD)));
-            
-        let input_text = if self.input.is_empty() && !self.is_streaming {
-            Span::styled("Type instructions (e.g. 'Add dark mode to the header')...", Style::default().fg(Color::Rgb(80, 80, 80)))
+        let mut lines: Vec<Line> = Vec::new();
+        for msg in &self.messages {
+            let (prefix, style) = match msg.kind {
+                MsgKind::User => ("▸ ", Style::default().fg(Color::Yellow)),
+                MsgKind::Agent => ("● ", Style::default().fg(ACCENT)),
+                MsgKind::Error => ("✘ ", Style::default().fg(Color::Red)),
+                MsgKind::System => ("  ", Style::default().fg(DIM)),
+            };
+
+            if msg.text.is_empty() {
+                continue;
+            }
+
+            lines.push(Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(&msg.text, style),
+            ]));
+            lines.push(Line::from(""));
+        }
+
+        let total_lines = lines.len() as u16;
+        let visible = inner_area.height;
+        let max_scroll = total_lines.saturating_sub(visible);
+        let scroll = self.chat_scroll.min(max_scroll);
+
+        let chat = Paragraph::new(lines)
+            .block(inner)
+            .wrap(Wrap { trim: false })
+            .scroll((max_scroll.saturating_sub(scroll), 0));
+
+        f.render_widget(chat, area);
+    }
+
+    fn render_activity(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default()
+            .borders(Borders::LEFT)
+            .border_style(Style::default().fg(BORDER_DIM))
+            .title(Span::styled(" activity ", Style::default().fg(DIM)));
+
+        let items: Vec<ListItem> = self.agent_logs.iter().rev().map(|(status, text)| {
+            let (icon, color) = match status {
+                LogStatus::Pending => (self.spinner(), ACCENT),
+                LogStatus::Done => ("✔", Color::Green),
+                LogStatus::Failed => ("✘", Color::Red),
+                LogStatus::Info => ("·", DIM),
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(format!(" {} ", icon), Style::default().fg(color)),
+                Span::styled(text, Style::default().fg(color)),
+            ]))
+        }).collect();
+
+        f.render_widget(List::new(items).block(block), area);
+    }
+
+    fn render_input(&self, f: &mut Frame, area: Rect) {
+        let title = if self.is_streaming {
+            Span::styled(" streaming... ", Style::default().fg(DIM))
         } else {
-            Span::raw(self.input.as_str())
+            Span::styled(" prompt ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))
         };
-        
-        let input = Paragraph::new(input_text)
-            .block(input_block);
-        f.render_widget(input, chunks[2]);
 
-        // Footer - Real-time stats
-        let footer_text = format!(" [ Ctrl+C ] Exit  [ Esc ] Cancel  [ Budget: $4.50 / $10.00 ] ");
-        let footer = Paragraph::new(Span::styled(footer_text, Style::default().fg(Color::Rgb(60, 60, 60))));
-        f.render_widget(footer, chunks[3]);
+        let border_color = if self.is_streaming { BORDER_DIM } else { ACCENT };
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(border_color))
+            .title(title);
+
+        let display_text = if self.input.is_empty() && !self.is_streaming {
+            Span::styled(
+                "Describe what you want to build...",
+                Style::default().fg(DIM),
+            )
+        } else {
+            Span::raw(&self.input)
+        };
+
+        f.render_widget(Paragraph::new(display_text).block(block), area);
+
+        if !self.is_streaming {
+            let x = area.x + 1 + self.input[..self.cursor_pos].chars().count() as u16;
+            let y = area.y + 1;
+            if x < area.x + area.width - 1 {
+                f.set_cursor(x, y);
+            }
+        }
+    }
+
+    fn render_footer(&self, f: &mut Frame, area: Rect) {
+        let budget_remaining = self.config.budget.limit - self.config.budget.consumed;
+        let budget_color = if budget_remaining < 1.0 {
+            Color::Red
+        } else if budget_remaining < 3.0 {
+            Color::Yellow
+        } else {
+            DIM
+        };
+
+        let footer = Line::from(vec![
+            Span::styled(" ^C", Style::default().fg(DIM)),
+            Span::styled(" quit  ", Style::default().fg(Color::Rgb(50, 50, 50))),
+            Span::styled("Esc", Style::default().fg(DIM)),
+            Span::styled(" cancel  ", Style::default().fg(Color::Rgb(50, 50, 50))),
+            Span::styled("↑↓", Style::default().fg(DIM)),
+            Span::styled(" scroll  ", Style::default().fg(Color::Rgb(50, 50, 50))),
+            Span::styled(
+                format!("${:.2} / ${:.2}", self.config.budget.consumed, self.config.budget.limit),
+                Style::default().fg(budget_color),
+            ),
+        ]);
+
+        f.render_widget(Paragraph::new(footer), area);
     }
 }
 
