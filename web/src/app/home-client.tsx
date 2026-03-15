@@ -56,7 +56,7 @@ export default function HomeClient() {
   return (
     <main>
       {/* Hero */}
-      <section className="relative overflow-hidden pt-20 pb-8 md:pt-28 md:pb-12">
+      <section className="relative overflow-hidden pt-20 pb-8 md:pt-28 md:pb-12 hero-glow">
         <div className="container mx-auto px-4 text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-brand/20 bg-brand/5 px-4 py-1.5 text-sm mb-8">
             <Icons.github className="h-3.5 w-3.5" />
@@ -124,7 +124,7 @@ export default function HomeClient() {
       <div className="gradient-divider" />
 
       {/* Features */}
-      <section className="py-20 md:py-28">
+      <section className="py-20 md:py-28 dot-grid">
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
             <h2 className="section-heading mb-4">
@@ -138,7 +138,7 @@ export default function HomeClient() {
             {features.map((feature) => (
               <div
                 key={feature.title}
-                className="group rounded-xl border border-border/50 bg-card/50 p-6 transition-all duration-300 hover:border-border hover:bg-card/80 hover:shadow-lg hover:shadow-brand/5"
+                className="group rounded-xl border border-border/50 bg-card/50 p-6 card-hover-glow"
               >
                 <div className="text-2xl mb-3">{feature.icon}</div>
                 <h3 className="font-semibold text-lg mb-2">{feature.title}</h3>
@@ -169,7 +169,7 @@ export default function HomeClient() {
             {models.map((m) => (
               <div
                 key={m.role}
-                className="flex items-start gap-4 rounded-xl border border-border/50 bg-card/30 p-5 transition-all duration-300 hover:border-border hover:bg-card/60"
+                className="flex items-start gap-4 rounded-xl border border-border/50 bg-card/30 p-5 card-hover-glow"
               >
                 <div className="flex-shrink-0">
                   <div className={`text-xs font-mono font-bold uppercase tracking-wider ${m.color}`}>
@@ -199,7 +199,7 @@ export default function HomeClient() {
       <div className="gradient-divider" />
 
       {/* CTA */}
-      <section className="py-20 md:py-28">
+      <section className="py-20 md:py-28 hero-glow">
         <div className="container mx-auto px-4 text-center max-w-2xl">
           <h2 className="hero-heading mb-4 text-white">
             Ready to ship?

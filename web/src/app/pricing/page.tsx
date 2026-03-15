@@ -89,8 +89,8 @@ export default function PricingPage() {
           <Card
             key={plan.name}
             className={cn(
-              'relative flex flex-col border-border/50 bg-card/50 transition-all duration-300 hover:bg-card/80',
-              plan.popular && 'glow-border',
+              'relative flex flex-col border-border/50 bg-card/50 card-hover-glow',
+              plan.popular && 'glow-border scale-[1.02]',
             )}
           >
             {plan.popular && (

@@ -110,8 +110,17 @@
   * {
     @apply border-border;
   }
+  html {
+    scroll-behavior: smooth;
+  }
   body {
     @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  ::selection {
+    background: oklch(0.75 0.15 195 / 0.25);
+    color: white;
   }
 }
 
@@ -239,6 +248,33 @@
   scrollbar-color: oklch(0.25 0 0 / 0.6) transparent;
 }
 
+/* Hero glow background */
+.hero-glow {
+  position: relative;
+}
+.hero-glow::before {
+  content: '';
+  position: absolute;
+  top: -20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  height: 60%;
+  background: radial-gradient(
+    ellipse at center,
+    oklch(0.75 0.15 195 / 0.08) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Dot grid background */
+.dot-grid {
+  background-image: radial-gradient(oklch(0.3 0 0 / 0.3) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
 /* Stagger children animation */
 .stagger-children > * {
   animation: slide-up 0.5s ease-out both;
@@ -249,3 +285,12 @@
 .stagger-children > *:nth-child(4) { animation-delay: 0.3s; }
 .stagger-children > *:nth-child(5) { animation-delay: 0.4s; }
 .stagger-children > *:nth-child(6) { animation-delay: 0.5s; }
+
+/* Card hover glow */
+.card-hover-glow {
+  transition: all 0.3s ease;
+}
+.card-hover-glow:hover {
+  box-shadow: 0 0 40px -10px oklch(0.75 0.15 195 / 0.12);
+  border-color: oklch(0.75 0.15 195 / 0.25);
+}
