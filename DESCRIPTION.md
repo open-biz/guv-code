@@ -1,8 +1,8 @@
-# 🎩 GUV-Code (General Unrestricted Vibe)
+# 🎩 GuvCode (General Unrestricted Vibe)
 
 **"Right away, Guv'nor."**
 
-GUV-Code is your blazingly fast, hyper-competent AI right-hand man. Built in zero-overhead Rust, GUV replaces sluggish, memory-hogging JS/Python agents (like Claude Code and Aider) with a single, lightning-fast binary. 
+GuvCode is your blazingly fast, hyper-competent AI right-hand man. Built in zero-overhead Rust, GUV replaces sluggish, memory-hogging JS/Python agents (like Claude Code and Aider) with a single, lightning-fast binary. 
 
 You give the orders. Guv handles the syntax, the AST-aware diffs, and the thousands of files in your repo—in milliseconds.
 

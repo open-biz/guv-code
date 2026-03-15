@@ -1,6 +1,6 @@
-# 🧠 GUV-Code Model Routing & Architecture
+# 🧠 GuvCode Model Routing & Architecture
 
-GUV-Code operates on a **Multi-Agent Routing System**. Because LLM APIs have vastly different strengths, context limits, and pricing structures, GUV splits your instructions into specialized tasks and sends them to the most efficient model.
+GuvCode operates on a **Multi-Agent Routing System**. Because LLM APIs have vastly different strengths, context limits, and pricing structures, GUV splits your instructions into specialized tasks and sends them to the most efficient model.
 
 ## 🔀 How the Routing Works
 
@@ -21,7 +21,7 @@ When you run `guv "Refactor my database layer"`, here is what happens under the 
 
 ## 🛠️ Adding New Models (For Contributors)
 
-The AI landscape moves fast. GUV-Code is designed to support new models the day they drop. To add a new model:
+The AI landscape moves fast. GuvCode is designed to support new models the day they drop. To add a new model:
 
 1. Open `src/llm/models.rs`.
 2. Add the new model identifier to the `ModelIdentifier` enum.

@@ -1,10 +1,10 @@
-# 🤝 Contributing to GUV-Code
+# 🤝 Contributing to GuvCode
 
-First off, thanks for taking the time to contribute! GUV-Code is built by and for developers who want a frictionless, uncompromising AI coding agent. 
+First off, thanks for taking the time to contribute! GuvCode is built by and for developers who want a frictionless, uncompromising AI coding agent. 
 
 ## 🏗️ Architecture & Stack
 
-Everything in GUV-Code is written in memory-safe, blazingly fast Rust.
+Everything in GuvCode is written in memory-safe, blazingly fast Rust.
 * **CLI Engine:** `clap`
 * **UI/Terminal Panes:** `ratatui` (for multiplexed agent views) and `indicatif` (for spinners)
 * **Search / Context:** `ignore` (for ripgrep speed) + custom `fast-resume` bincode caching
@@ -15,7 +15,7 @@ Everything in GUV-Code is written in memory-safe, blazingly fast Rust.
 
 1. **Clone the repo:**
    ```bash
-   git clone https://github.com/yourusername/guv-code.git
+   git clone https://github.com/open-biz/guv-code.git
    cd guv-code
    ```
 2. **Build the project:**
@@ -29,7 +29,7 @@ Everything in GUV-Code is written in memory-safe, blazingly fast Rust.
 
 ## ✅ Development Guidelines
 
-* **Keep it Fast:** GUV-Code's main selling point against JS/Python agents is pure speed. Avoid heavy allocations in the `fast-resume` indexing path. Use `rayon` for parallel directory walking.
+* **Keep it Fast:** GuvCode's main selling point against JS/Python agents is pure speed. Avoid heavy allocations in the `fast-resume` indexing path. Use `rayon` for parallel directory walking.
 * **Commit Logical Steps:** Keep your commits atomic. If you are adding a new model provider, don't bundle it with a UI tweak in `ratatui`. 
 * **Respect the Vibe:** The CLI should feel like a helpful right-hand fixer ("The Guv'nor"). Keep error messages beautiful (using `miette`) and helpful. Don't dump raw stack traces to the user.
 

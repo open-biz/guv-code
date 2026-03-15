@@ -4,12 +4,8 @@ codebuff/
 crush/
 fast-resume/
 gemini-cli/
-target/
-Cargo.lock
 .guv/
 ref/
 
-
-# Added by cargo
-
+# Rust
 /target
