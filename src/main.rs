@@ -16,7 +16,7 @@ use miette::{Result, miette};
 
 #[derive(Parser)]
 #[command(name = "guv")]
-#[command(about = "GUV-Code: Right away, Guv'nor.", long_about = None)]
+#[command(about = "GuvCode: Right away, Guv'nor.", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,

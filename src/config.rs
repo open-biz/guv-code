@@ -92,7 +92,7 @@ impl Config {
     }
 
     fn global_config_path() -> Result<PathBuf> {
-        if let Some(_proj_dirs) = ProjectDirs::from("com", "guv", "guv-code") {
+        if let Some(_proj_dirs) = ProjectDirs::from("com", "guv", "guvcode") {
              let home = directories::UserDirs::new()
                 .context("Could not find home directory")?
                 .home_dir()

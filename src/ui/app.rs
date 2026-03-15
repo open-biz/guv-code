@@ -84,7 +84,7 @@ impl App {
                                     let _ = orch_clone.run(query_clone, ui_tx).await;
                                 });
                             } else {
-                                self.messages.push("✘ System: Error: API keys missing. Run `guv-code auth`.".to_string());
+                                self.messages.push("✘ System: Error: API keys missing. Run `guv auth`.".to_string());
                             }
                         }
                         (KeyCode::Esc, _) => {
@@ -177,7 +177,7 @@ impl App {
 
         // Header - Sleek and minimal
         let header_content = vec![
-            Span::styled(" 🎩 GUV-CODE ", Style::default().fg(Color::Black).bg(self.theme_color).add_modifier(Modifier::BOLD)),
+            Span::styled(" 🎩 GUVCODE ", Style::default().fg(Color::Black).bg(self.theme_color).add_modifier(Modifier::BOLD)),
             Span::styled(format!("  {}  ", self.repo_path.display()), Style::default().fg(Color::DarkGray)),
         ];
         f.render_widget(Paragraph::new(Line::from(header_content)), chunks[0]);
