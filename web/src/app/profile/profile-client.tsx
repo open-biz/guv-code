@@ -45,8 +45,8 @@ export function ProfileClient() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-20 max-w-3xl">
-      <h1 className="text-3xl font-bold tracking-tight mb-8">Settings</h1>
+    <div className="container mx-auto px-4 py-20 md:py-28 max-w-3xl page-enter">
+      <h1 className="section-heading mb-8">Settings</h1>
 
       <Tabs defaultValue={defaultTab}>
         <TabsList>
@@ -55,7 +55,7 @@ export function ProfileClient() {
         </TabsList>
 
         <TabsContent value="profile" className="mt-6">
-          <Card>
+          <Card className="border-border/50 bg-card/50 card-hover-glow">
             <CardHeader>
               <CardTitle>Profile</CardTitle>
               <CardDescription>
@@ -104,7 +104,7 @@ export function ProfileClient() {
         </TabsContent>
 
         <TabsContent value="api-keys" className="mt-6">
-          <Card>
+          <Card className="border-border/50 bg-card/50 card-hover-glow">
             <CardHeader>
               <CardTitle>API Keys</CardTitle>
               <CardDescription>

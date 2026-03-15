@@ -44,20 +44,20 @@ export function UsageClient() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-20 max-w-4xl">
-      <div className="flex items-center justify-between mb-8">
+    <div className="container mx-auto px-4 py-20 md:py-28 max-w-4xl page-enter">
+      <div className="flex items-center justify-between mb-10">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Usage Dashboard</h1>
-          <p className="text-muted-foreground mt-1">
-            Monitor your API usage and manage quotas.
+          <h1 className="section-heading mb-2">Usage</h1>
+          <p className="text-muted-foreground">
+            Monitor API usage and manage quotas.
           </p>
         </div>
-        <Badge variant="secondary">Free Plan</Badge>
+        <Badge variant="secondary" className="text-sm">Free Plan</Badge>
       </div>
 
       <div className="grid gap-6">
         {/* Current Period */}
-        <Card>
+        <Card className="border-border/50 bg-card/50 card-hover-glow">
           <CardHeader>
             <CardTitle>Current Period</CardTitle>
             <CardDescription>
@@ -85,7 +85,7 @@ export function UsageClient() {
         </Card>
 
         {/* Budget */}
-        <Card>
+        <Card className="border-border/50 bg-card/50 card-hover-glow">
           <CardHeader>
             <CardTitle>Budget</CardTitle>
             <CardDescription>
@@ -107,7 +107,7 @@ export function UsageClient() {
         </Card>
 
         {/* Model Usage Breakdown */}
-        <Card>
+        <Card className="border-border/50 bg-card/50 card-hover-glow">
           <CardHeader>
             <CardTitle>Model Usage</CardTitle>
             <CardDescription>
