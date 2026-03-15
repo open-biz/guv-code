@@ -8,7 +8,7 @@ test('homepage has title', async ({ page }) => {
 test('homepage has hero heading', async ({ page }) => {
   await page.goto('/')
   await expect(
-    page.getByRole('heading', { name: /Your AI Coding Agent/i }),
+    page.getByRole('heading', { name: /Ship code faster/i }),
   ).toBeVisible()
 })
 
