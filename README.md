@@ -1,127 +1,79 @@
-# 🎩 GuvCode (General Unrestricted Vibe)
+# 🎩 GuvCode
 
-[![Written in Rust](https://img.shields.io/badge/Written_in-Rust-E34F26.svg?style=flat-square&logo=rust)](https://rust-lang.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/crates/v/guv-code?style=flat-square)](#)
-[![Vibes](https://img.shields.io/badge/Vibes-Immaculate-FF1493.svg?style=flat-square)](#)
+[![Rust](https://img.shields.io/badge/Rust-E34F26.svg?style=flat-square&logo=rust)](https://rust-lang.org)
+[![MIT](https://img.shields.io/badge/MIT-blue.svg?style=flat-square)](LICENSE)
 
 <p align="center">
-  <img src="GuvCode.png" alt="GuvCode Hero" width="800px">
+  <img src="GuvCode.png" alt="GuvCode" width="800px">
 </p>
 
 **"Right away, Guv'nor."**
 
-GuvCode is a blazingly fast, 100% Rust-native AI coding agent built for your terminal. It acts as your hyper-competent right-hand fixer, designed to parse massive codebases instantly, plan architectures, and surgically apply AST-aware code edits.
-
-No single-prompt guessing. No memory crashes. Just pure, multi-model vibecoding.
-
----
-
-## 🛑 The Problem with Current Agents
-
-Current terminal-based AI agents suffer from their underlying runtimes:
-
-- ❌ **The Node.js/V8 Bottleneck:** JavaScript-based agents struggle with massive enterprise codebases. When ingesting thousands of files, they hit V8's heap limits, resulting in garbage-collection thrashing and Out-Of-Memory (OOM) crashes.
-- ❌ **Python Dependency Hell:** Python-based agents force users to wrestle with `pipx`, `venv`, and conflicting system libraries just to install a CLI tool. They also suffer from the Global Interpreter Lock (GIL), making parallel AST parsing sluggish.
-- ❌ **Vendor Lock-in & "God Models":** Most tools force you to use one expensive model for everything—from basic file searching to deep reasoning—which burns through your wallet and API rate limits.
-
-## ⚡ The Guv'nor's Solution
-
-GuvCode is distributed as a **single, statically linked Rust binary**.
-
-- 🚀 **Zero Bloat, Zero OOMs:** Installs in 1 second. Starts in `0.001s`. Uses `ripgrep`-style multithreaded directory walking to map 10,000+ files in milliseconds.
-- 🧠 **Multi-Agent Routing:** GUV doesn't use one "God Prompt." It delegates. It uses high-context models (like Gemini) to map the codebase, and high-reasoning models (like Claude Opus) to write the actual code.
-- 🌳 **Bulletproof AST Diffs:** GUV uses native `tree-sitter` bindings. The LLM dictates the logic, and Guv safely injects it into the Abstract Syntax Tree without breaking your indentation.
-- 🛡️ **Git-Safe & Budgeted:** Auto-commits before every edit (`guv undo` to instantly revert hallucinations). Built-in token budgeting (`guv budget set $5`) ensures you never burn cash on a runaway loop.
-
----
-
-## 🤖 Supported Models & Providers (BYOK)
-
-GuvCode strictly enforces **BYOK (Bring Your Own Key)**. You configure your providers, and GUV automatically routes tasks to the best-suited model.
-
-| Provider | Recommended Model | Internal Agent Role | Why We Use It |
-| :--- | :--- | :--- | :--- |
-| **Google** | `gemini-2.5-pro` / `flash` | **The Scout** | Massive 2M+ token context window. Best for ingesting the entire codebase index and pinpointing relevant files instantly. |
-| **Anthropic** | `claude-3-opus` / `3.7-sonnet` | **The Coder** | Industry-leading deep reasoning and precise AST-aware diff generation. |
-| **Google** | `gemini-3.1-pro` | **The Architect** | High-level system design, multi-file execution planning, and complex refactoring logic. |
-| **OpenAI** | `o3` / `gpt-4o` | **The Coder (Fallback)** | General purpose execution and syntax writing. |
-| **Local** | `qwen-2.5-coder` (via Ollama) | **The Reviewer** | Fast, free, local syntax validation and post-edit linting. |
-
-*(See [MODELS.md](./MODELS.md) for instructions on adding new providers and adjusting routing weights).*
-
----
-
-## 📦 Quickstart
-
-Stop wrestling with dependencies and start vibing.
+AI coding agent for your terminal. Single Rust binary. Multi-model. BYOK.
 
 ```bash
-# 1. Install via bash script
 curl -sL https://guv.dev/install.sh | bash
-# (Or via cargo: cargo install guv-code)
-
-# 2. Hand Guv your keys (BYOK)
-guv auth set --provider google "AIZA..."
-guv auth set --provider anthropic "sk-ant..."
-
-# 3. Put Guv to work
-guv "Refactor the auth middleware in src/ to use JWTs instead of sessions."
+guv auth --gemini "AIZA..." --anthropic "sk-ant..."
+guv "Refactor auth middleware to use JWTs."
 ```
 
----
+## Why
 
-## 🌐 Web Dashboard
+- **Fast** — single static binary, starts in 1ms, indexes 10k+ files in milliseconds via parallel `ripgrep`-style walking
+- **Multi-model routing** — delegates tasks to the right model (Gemini for context, Claude for code, local Ollama for review)
+- **AST-aware edits** — `tree-sitter` bindings for surgical code injection, no broken indentation
+- **Git-safe** — auto-commits before edits, `guv undo` to revert instantly
+- **Budgeted** — built-in token budgeting so you don't burn cash on runaway loops
+- **BYOK** — bring your own keys, no vendor lock-in
 
-GuvCode includes a web dashboard for managing your account, API keys, and usage quotas. It is **not** a code editor — the CLI is the coding interface.
+## Models
 
-The dashboard is a **Next.js 16** app located in the [`web/`](./web) directory.
+GuvCode routes tasks to specialized models automatically:
 
-**Features:**
-- GitHub OAuth login (via NextAuth)
-- Usage monitoring and quota tracking
-- API key generation for CLI authentication
-- Budget controls and spending alerts
-- Pricing tiers (Free / Pro / Team)
+| Role | Default Model | Job |
+|---|---|---|
+| **Scout** | Gemini 2.5 Pro/Flash | Ingest codebase, find relevant files |
+| **Architect** | Gemini 3.1 Pro | Plan multi-file edits |
+| **Coder** | Claude 3 Opus / Sonnet | Generate AST-aware diffs |
+| **Reviewer** | Local Ollama / GPT-4o-mini | Validate syntax post-edit |
 
-**Running locally:**
+See [MODELS.md](./MODELS.md) for details.
+
+## CLI
 
 ```bash
-cd web
-bun install
-bun run dev
-# → http://localhost:3000
+guv "Add error handling to the database layer"   # start coding
+guv auth --gemini "KEY" --anthropic "KEY"         # configure keys
+guv budget --limit 5.00                           # set spend cap
+guv budget                                        # check spend
+guv undo                                          # revert last edit
 ```
 
-See [`web/.env.example`](./web/.env.example) for required environment variables.
+## Web Dashboard
 
----
+Account management, API keys, and usage tracking. Not a code editor.
 
-## 🏗️ Project Structure
-
-```
-guv-code/
-├── src/              # Rust CLI agent source
-│   ├── main.rs       # CLI entrypoint (clap)
-│   ├── llm.rs        # LLM provider routing & streaming
-│   ├── orchestrator.rs # Multi-agent task orchestration
-│   ├── index.rs      # Fast-resume codebase indexer
-│   ├── config.rs     # TOML config & API key management
-│   ├── git.rs        # Git auto-commit & undo
-│   ├── agent_logic/  # Scout, Architect, Coder, Reviewer logic
-│   └── ui/           # TUI with ratatui
-├── web/              # Next.js web dashboard
-│   ├── src/app/      # App router pages & API routes
-│   ├── src/components/ # shadcn/ui components & layout
-│   ├── db/           # Drizzle ORM schema
-│   └── package.json
-├── Cargo.toml        # Rust dependencies
-├── MODELS.md         # Model routing docs
-└── CONTRIBUTING.md   # Contributor guide
+```bash
+cd web && bun install && bun run dev   # → http://localhost:3000
 ```
 
----
+See [`web/README.md`](./web/README.md) for details.
 
-## 🤝 Contributing
+## Structure
 
-Want to help make the Guv'nor even better? Check out our [CONTRIBUTING.md](./CONTRIBUTING.md).
+```
+src/                  Rust CLI
+├── main.rs           CLI entrypoint (clap)
+├── llm.rs            LLM providers & streaming
+├── orchestrator.rs   Multi-agent orchestration
+├── index.rs          Fast-resume codebase indexer
+├── config.rs         TOML config & key management
+├── git.rs            Auto-commit & undo
+├── agent_logic/      Scout, Architect, Coder, Reviewer
+└── ui/               TUI (ratatui)
+web/                  Next.js dashboard
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
