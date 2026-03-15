@@ -20,7 +20,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6">
         <Card className="border-border/50 bg-card/80 backdrop-blur">
           <CardHeader className="text-center pb-2">
-            <div className="mx-auto mb-4 text-5xl">🎩</div>
+            <Icons.logo className="mx-auto mb-4 h-14 w-14 rounded-xl" />
             <CardTitle className="text-2xl tracking-tight">Sign in to GuvCode</CardTitle>
             <CardDescription className="text-sm">
               Manage API keys, track usage, control budgets.

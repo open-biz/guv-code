@@ -1,6 +1,6 @@
 'use client'
 
-import { Menu, DollarSign, LogIn, BarChart2, Star } from 'lucide-react'
+import { Menu, DollarSign, LogIn, BarChart2 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
@@ -29,13 +29,13 @@ export const Navbar = () => {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container mx-auto px-4 py-3 flex justify-between items-center">
+      <div className="container mx-auto px-4 py-2.5 flex justify-between items-center">
         <Link
           href="/"
-          className="flex items-center space-x-2 group transition-all duration-300 hover:scale-105"
+          className="flex items-center gap-2.5 group transition-all duration-200"
         >
-          <span className="text-2xl">🎩</span>
-          <span className="font-bold text-lg tracking-tight">
+          <Icons.logo className="h-7 w-7 rounded transition-transform duration-200 group-hover:scale-105" />
+          <span className="font-bold text-[17px] tracking-tight">
             {siteConfig.title}
           </span>
         </Link>
@@ -125,21 +125,19 @@ export const Navbar = () => {
           ) : (
             <Link
               href="/login"
-              className="hidden md:inline-block relative group"
+              className="hidden md:inline-block"
             >
-              <div className="absolute inset-0 bg-brand rounded-md translate-x-0.5 -translate-y-0.5 transition-all duration-300 group-hover:translate-x-1 group-hover:-translate-y-1" />
               <Button
                 className={cn(
-                  'relative',
-                  'bg-white text-black hover:bg-white',
-                  'border border-white/50',
-                  'transition-all duration-300',
-                  'group-hover:-translate-x-0.5 group-hover:translate-y-0.5',
-                  'group-hover:shadow-lg',
+                  'bg-white text-black hover:bg-white/90',
+                  'rounded-full px-5 h-9 text-sm font-medium',
+                  'border border-white/80',
+                  'transition-all duration-200',
+                  'hover:shadow-lg hover:shadow-white/10',
                   'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                 )}
               >
-                Log in
+                Log In
               </Button>
             </Link>
           )}

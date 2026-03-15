@@ -7,6 +7,24 @@ export const Icons = {
   moon: Moon,
   logOut: LogOut,
   loader: Loader2,
+  logo: (props: LucideProps) => (
+    <svg viewBox="0 0 24 24" fill="none" {...props}>
+      <rect width="24" height="24" rx="5" fill="url(#logo-grad)" />
+      <path
+        d="M7 8l4 4-4 4M13 16h4"
+        stroke="white"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <defs>
+        <linearGradient id="logo-grad" x1="0" y1="0" x2="24" y2="24">
+          <stop stopColor="#22d3ee" />
+          <stop offset="1" stopColor="#6366f1" />
+        </linearGradient>
+      </defs>
+    </svg>
+  ),
   github: (props: LucideProps) => (
     <svg viewBox="0 0 438.549 438.549" {...props}>
       <path

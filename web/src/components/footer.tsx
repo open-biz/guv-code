@@ -49,9 +49,9 @@ export const Footer = () => {
       <div className="container mx-auto flex flex-col gap-6 py-8 px-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
           <div className="space-y-3">
-            <Link href="/" className="flex items-center space-x-2">
-              <span className="text-2xl">🎩</span>
-              <span className="font-bold text-lg">{siteConfig.title}</span>
+            <Link href="/" className="flex items-center gap-2.5">
+              <Icons.logo className="h-6 w-6 rounded" />
+              <span className="font-bold text-[17px] tracking-tight">{siteConfig.title}</span>
             </Link>
             <p className="text-sm text-muted-foreground leading-relaxed">
               Open-source AI coding agent. Built in Rust.

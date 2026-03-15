@@ -62,7 +62,7 @@ export default function HomeClient() {
   return (
     <main className="page-enter">
       {/* Hero */}
-      <section className="relative overflow-hidden pt-20 pb-8 md:pt-28 md:pb-12 hero-glow">
+      <section className="relative overflow-hidden pt-12 pb-8 md:pt-16 md:pb-12 hero-glow">
         <div className="container mx-auto px-4 text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-brand/20 bg-brand/5 px-4 py-1.5 text-sm mb-8">
             <Icons.github className="h-3.5 w-3.5" />
