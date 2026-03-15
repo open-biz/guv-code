@@ -27,7 +27,7 @@ export function CopyInstallButton({ className }: { className?: string }) {
         'group relative w-full md:w-auto md:min-w-[380px]',
         'bg-zinc-800/60 border border-zinc-700/50 rounded-md overflow-hidden',
         'flex items-center justify-between h-14 px-4',
-        'transition-all duration-300',
+        'transition-all duration-300 pulse-border',
         'hover:border-brand/40 hover:shadow-[0_0_15px_oklch(0.75_0.15_195_/_0.15)]',
         className,
       )}

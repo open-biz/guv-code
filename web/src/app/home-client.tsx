@@ -15,31 +15,37 @@ const features = [
     title: 'Single binary, zero deps',
     description: 'One Rust binary. Installs in 1s. Indexes 10k+ files in milliseconds.',
     icon: '⚡',
+    bg: 'bg-amber-500/10',
   },
   {
     title: 'Multi-model routing',
     description: 'Gemini maps your codebase. Claude writes the code. Ollama validates locally.',
     icon: '🧠',
+    bg: 'bg-purple-500/10',
   },
   {
     title: 'AST-aware edits',
     description: 'tree-sitter bindings for surgical code injection. No broken indentation.',
     icon: '🌳',
+    bg: 'bg-green-500/10',
   },
   {
     title: 'Git-safe',
     description: 'Auto-commits before every edit. One command to revert.',
     icon: '🛡️',
+    bg: 'bg-blue-500/10',
   },
   {
     title: 'BYOK',
     description: 'Bring your own keys. Google, Anthropic, OpenAI, or local Ollama.',
     icon: '🔑',
+    bg: 'bg-orange-500/10',
   },
   {
     title: 'Budget controls',
     description: 'Set spend caps. Track usage. Never burn cash on a runaway loop.',
     icon: '📊',
+    bg: 'bg-cyan-500/10',
   },
 ]
 
@@ -54,7 +60,7 @@ export default function HomeClient() {
   const [buttonHovered, setButtonHovered] = useState(false)
 
   return (
-    <main>
+    <main className="page-enter">
       {/* Hero */}
       <section className="relative overflow-hidden pt-20 pb-8 md:pt-28 md:pb-12 hero-glow">
         <div className="container mx-auto px-4 text-center">
@@ -140,7 +146,9 @@ export default function HomeClient() {
                 key={feature.title}
                 className="group rounded-xl border border-border/50 bg-card/50 p-6 card-hover-glow"
               >
-                <div className="text-2xl mb-3">{feature.icon}</div>
+                <div className={cn('inline-flex items-center justify-center w-10 h-10 rounded-lg text-xl mb-4', feature.bg)}>
+                  {feature.icon}
+                </div>
                 <h3 className="font-semibold text-lg mb-2">{feature.title}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
                   {feature.description}

@@ -220,24 +220,36 @@ export function IDEDemo({ className }: { className?: string }) {
 
   return (
     <div className={cn('relative', className)}>
-      {/* Decorative offset blocks */}
+      {/* Decorative offset blocks — vivid layered 3D effect */}
       <div
-        className="absolute rounded-lg"
+        className="absolute rounded-lg transition-all duration-1000"
         style={{
           inset: 0,
-          background: 'linear-gradient(165deg, oklch(0.75 0.15 195), oklch(0.55 0.15 250))',
-          transform: 'translate(8px, 8px)',
-          opacity: 0.6,
-          zIndex: -2,
+          background: 'linear-gradient(165deg, oklch(0.75 0.15 195), oklch(0.55 0.18 250))',
+          transform: showIDE ? 'translate(6px, 6px)' : 'translate(0, 0)',
+          opacity: showIDE ? 0.75 : 0,
+          zIndex: -1,
+          boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.1)',
         }}
       />
       <div
-        className="absolute rounded-lg"
+        className="absolute rounded-lg transition-all duration-1000 delay-100"
         style={{
           inset: 0,
-          background: 'linear-gradient(165deg, oklch(0.6 0.12 160), oklch(0.45 0.15 195))',
-          transform: 'translate(16px, 16px)',
-          opacity: 0.35,
+          background: 'linear-gradient(165deg, oklch(0.5 0.18 160), oklch(0.35 0.15 195))',
+          transform: showIDE ? 'translate(12px, 12px)' : 'translate(0, 0)',
+          opacity: showIDE ? 0.5 : 0,
+          zIndex: -2,
+          boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.05)',
+        }}
+      />
+      <div
+        className="absolute rounded-lg transition-all duration-1000 delay-200"
+        style={{
+          inset: 0,
+          background: 'linear-gradient(165deg, oklch(0.4 0.12 140), oklch(0.25 0.1 180))',
+          transform: showIDE ? 'translate(18px, 18px)' : 'translate(0, 0)',
+          opacity: showIDE ? 0.3 : 0,
           zIndex: -3,
         }}
       />
