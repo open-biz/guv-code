@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { signIn } from 'next-auth/react'
 
 import { Icons } from '@/components/icons'
@@ -11,39 +12,55 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { siteConfig } from '@/lib/constant'
 
 export default function LoginPage() {
   return (
     <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4 text-4xl">🎩</div>
-          <CardTitle className="text-2xl">Welcome to GuvCode</CardTitle>
-          <CardDescription>
-            Sign in to manage your API keys and usage quotas.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <Button
-            className="w-full"
-            onClick={() => signIn('github', { callbackUrl: '/usage' })}
+      <div className="w-full max-w-md space-y-6">
+        <Card className="border-border/50 bg-card/80 backdrop-blur">
+          <CardHeader className="text-center pb-2">
+            <div className="mx-auto mb-4 text-5xl">🎩</div>
+            <CardTitle className="text-2xl tracking-tight">Sign in to GuvCode</CardTitle>
+            <CardDescription className="text-sm">
+              Manage API keys, track usage, control budgets.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 pt-4">
+            <Button
+              size="lg"
+              className="w-full text-base gap-2"
+              onClick={() => signIn('github', { callbackUrl: '/usage' })}
+            >
+              <Icons.github className="h-5 w-5" />
+              Continue with GitHub
+            </Button>
+            <p className="text-center text-xs text-muted-foreground leading-relaxed">
+              By signing in, you agree to our{' '}
+              <Link href="/terms-of-service" className="underline hover:text-foreground transition-colors">
+                Terms
+              </Link>{' '}
+              and{' '}
+              <Link href="/privacy-policy" className="underline hover:text-foreground transition-colors">
+                Privacy Policy
+              </Link>
+              .
+            </p>
+          </CardContent>
+        </Card>
+        <p className="text-center text-xs text-muted-foreground">
+          GuvCode is{' '}
+          <Link
+            href={siteConfig.github}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-foreground transition-colors"
           >
-            <Icons.github className="mr-2 h-5 w-5" />
-            Sign in with GitHub
-          </Button>
-          <p className="text-center text-xs text-muted-foreground">
-            By signing in, you agree to our{' '}
-            <a href="/terms-of-service" className="underline hover:text-primary">
-              Terms of Service
-            </a>{' '}
-            and{' '}
-            <a href="/privacy-policy" className="underline hover:text-primary">
-              Privacy Policy
-            </a>
-            .
-          </p>
-        </CardContent>
-      </Card>
+            open source
+          </Link>
+          {' '}and free to start.
+        </p>
+      </div>
     </div>
   )
 }

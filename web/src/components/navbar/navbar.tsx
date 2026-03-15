@@ -1,6 +1,6 @@
 'use client'
 
-import { Menu, DollarSign, LogIn, BarChart2 } from 'lucide-react'
+import { Menu, DollarSign, LogIn, BarChart2, Star } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
@@ -42,7 +42,7 @@ export const Navbar = () => {
         <nav className="hidden md:flex items-center space-x-1 ml-auto">
           <Link
             href="/pricing"
-            className="relative font-medium px-3 py-2 rounded-md transition-all duration-200 hover:bg-accent hover:text-accent-foreground group"
+            className="nav-hover-effect font-medium px-3 py-2 rounded-md transition-all duration-200 hover:text-accent-foreground"
           >
             <span className="relative z-10">Pricing</span>
           </Link>
@@ -50,15 +50,15 @@ export const Navbar = () => {
             href={siteConfig.github}
             target="_blank"
             rel="noopener noreferrer"
-            className="relative font-medium px-3 py-2 rounded-md transition-all duration-200 hover:bg-accent hover:text-accent-foreground flex items-center gap-2 group"
+            className="nav-hover-effect font-medium px-3 py-2 rounded-md transition-all duration-200 hover:text-accent-foreground flex items-center gap-2"
           >
-            <Icons.github className="h-4 w-4" />
+            <Icons.github className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
             <span className="relative z-10">GitHub</span>
           </Link>
           {status !== 'loading' && session && (
             <Link
               href="/usage"
-              className="relative font-medium px-3 py-2 rounded-md transition-all duration-200 hover:bg-accent hover:text-accent-foreground group"
+              className="nav-hover-effect font-medium px-3 py-2 rounded-md transition-all duration-200 hover:text-accent-foreground"
             >
               <span className="relative z-10">Usage</span>
             </Link>
@@ -67,14 +67,21 @@ export const Navbar = () => {
         <div className="flex items-center space-x-2 ml-4">
           <DropdownMenu>
             <DropdownMenuTrigger asChild className="md:hidden">
-              <Button variant="ghost" size="icon">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="transition-all duration-200 hover:bg-accent hover:scale-105 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
                 <Menu className="h-5 w-5" />
                 <span className="sr-only">Toggle menu</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent
+              align="end"
+              className="animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-200"
+            >
               <DropdownMenuItem asChild>
-                <Link href="/pricing" className="flex items-center cursor-pointer">
+                <Link href="/pricing" className="flex items-center cursor-pointer transition-colors">
                   <DollarSign className="mr-2 h-4 w-4" />
                   <span>Pricing</span>
                 </Link>
@@ -84,7 +91,7 @@ export const Navbar = () => {
                   href={siteConfig.github}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center cursor-pointer"
+                  className="flex items-center cursor-pointer transition-colors"
                 >
                   <Icons.github className="mr-2 h-4 w-4" />
                   <span>GitHub</span>
@@ -92,7 +99,7 @@ export const Navbar = () => {
               </DropdownMenuItem>
               {status !== 'loading' && session && (
                 <DropdownMenuItem asChild>
-                  <Link href="/usage" className="flex items-center cursor-pointer">
+                  <Link href="/usage" className="flex items-center cursor-pointer transition-colors">
                     <BarChart2 className="mr-2 h-4 w-4" />
                     <span>Usage</span>
                   </Link>
@@ -100,7 +107,7 @@ export const Navbar = () => {
               )}
               {status !== 'loading' && !session && (
                 <DropdownMenuItem asChild>
-                  <Link href="/login" className="flex items-center cursor-pointer">
+                  <Link href="/login" className="flex items-center cursor-pointer transition-colors">
                     <LogIn className="mr-2 h-4 w-4" />
                     <span>Log in</span>
                   </Link>
@@ -116,12 +123,20 @@ export const Navbar = () => {
           ) : session ? (
             <UserDropdown session={session} />
           ) : (
-            <Link href="/login" className="hidden md:inline-block">
+            <Link
+              href="/login"
+              className="hidden md:inline-block relative group"
+            >
+              <div className="absolute inset-0 bg-brand rounded-md translate-x-0.5 -translate-y-0.5 transition-all duration-300 group-hover:translate-x-1 group-hover:-translate-y-1" />
               <Button
                 className={cn(
-                  'bg-white text-black hover:bg-white/90',
+                  'relative',
+                  'bg-white text-black hover:bg-white',
                   'border border-white/50',
                   'transition-all duration-300',
+                  'group-hover:-translate-x-0.5 group-hover:translate-y-0.5',
+                  'group-hover:shadow-lg',
+                  'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                 )}
               >
                 Log in

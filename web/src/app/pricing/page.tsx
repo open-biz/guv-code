@@ -13,10 +13,11 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { siteConfig } from '@/lib/constant'
+import { cn } from '@/lib/utils'
 
 export const metadata: Metadata = {
   title: 'Pricing',
-  description: `${siteConfig.title} pricing plans. Choose the plan that works for you.`,
+  description: `${siteConfig.title} pricing. Start free, upgrade when you need to.`,
 }
 
 const plans = [
@@ -24,7 +25,7 @@ const plans = [
     name: 'Free',
     price: '$0',
     period: 'forever',
-    description: 'Perfect for trying out GuvCode.',
+    description: 'Try it out. No credit card.',
     features: [
       '50 requests/day',
       'Community support',
@@ -38,8 +39,8 @@ const plans = [
   {
     name: 'Pro',
     price: '$20',
-    period: '/month',
-    description: 'For individual developers who need more power.',
+    period: '/mo',
+    description: 'For developers who ship daily.',
     features: [
       'Unlimited requests',
       'Priority support',
@@ -55,7 +56,7 @@ const plans = [
   {
     name: 'Team',
     price: '$50',
-    period: '/user/month',
+    period: '/user/mo',
     description: 'For teams that build together.',
     features: [
       'Everything in Pro',
@@ -73,47 +74,48 @@ const plans = [
 
 export default function PricingPage() {
   return (
-    <div className="container mx-auto px-4 py-20">
+    <div className="container mx-auto px-4 py-20 md:py-28">
       <div className="text-center mb-16">
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
-          Simple, transparent pricing
+        <h1 className="section-heading mb-4">
+          Simple pricing
         </h1>
-        <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-          Start free, upgrade when you need to. No hidden fees, no surprises.
+        <p className="hero-subtext">
+          Start free. Upgrade when you need to. No surprises.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto stagger-children">
         {plans.map((plan) => (
           <Card
             key={plan.name}
-            className={`relative flex flex-col ${
-              plan.popular ? 'border-primary shadow-lg' : ''
-            }`}
+            className={cn(
+              'relative flex flex-col border-border/50 bg-card/50 transition-all duration-300 hover:bg-card/80',
+              plan.popular && 'glow-border',
+            )}
           >
             {plan.popular && (
               <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <Badge>Most Popular</Badge>
+                <Badge className="bg-brand text-black font-semibold">Most Popular</Badge>
               </div>
             )}
             <CardHeader>
               <CardTitle className="text-xl">{plan.name}</CardTitle>
               <div className="mt-2">
-                <span className="text-4xl font-bold">{plan.price}</span>
-                <span className="text-muted-foreground ml-1">
+                <span className="text-4xl font-bold tracking-tight">{plan.price}</span>
+                <span className="text-muted-foreground ml-1 text-sm">
                   {plan.period}
                 </span>
               </div>
-              <CardDescription className="mt-2">
+              <CardDescription className="mt-2 text-sm">
                 {plan.description}
               </CardDescription>
             </CardHeader>
             <CardContent className="flex-1">
               <ul className="space-y-3">
                 {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-center gap-2 text-sm">
-                    <span className="text-primary">✓</span>
-                    {feature}
+                  <li key={feature} className="flex items-center gap-2.5 text-sm">
+                    <span className="text-green-400 text-xs">✓</span>
+                    <span className="text-muted-foreground">{feature}</span>
                   </li>
                 ))}
               </ul>
@@ -123,6 +125,7 @@ export default function PricingPage() {
                 <Button
                   className="w-full"
                   variant={plan.popular ? 'default' : 'outline'}
+                  size="lg"
                 >
                   {plan.cta}
                 </Button>
@@ -130,6 +133,21 @@ export default function PricingPage() {
             </CardFooter>
           </Card>
         ))}
+      </div>
+
+      <div className="text-center mt-12">
+        <p className="text-sm text-muted-foreground">
+          GuvCode is{' '}
+          <Link
+            href={siteConfig.github}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-foreground transition-colors"
+          >
+            open source (MIT)
+          </Link>
+          . Self-host for free, or use our managed dashboard.
+        </p>
       </div>
     </div>
   )
