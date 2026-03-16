@@ -67,7 +67,7 @@ const plans = [
       'Dedicated support',
     ],
     cta: 'Contact Sales',
-    href: 'mailto:sales@guv.dev',
+    href: 'mailto:sales@vovk.vc',
     popular: false,
   },
 ]

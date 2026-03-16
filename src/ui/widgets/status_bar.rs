@@ -14,6 +14,8 @@ pub struct StatusBar<'a> {
     mode: &'a str,
     is_indexing: bool,
     memory_hit: bool,
+    is_streaming: bool,
+    help_visible: bool,
 }
 
 impl<'a> StatusBar<'a> {
@@ -30,6 +32,8 @@ impl<'a> StatusBar<'a> {
             mode,
             is_indexing: false,
             memory_hit: false,
+            is_streaming: false,
+            help_visible: false,
         }
     }
 
@@ -42,6 +46,28 @@ impl<'a> StatusBar<'a> {
         self.memory_hit = hit;
         self
     }
+
+    pub fn streaming(mut self, streaming: bool) -> Self {
+        self.is_streaming = streaming;
+        self
+    }
+
+    pub fn help_visible(mut self, visible: bool) -> Self {
+        self.help_visible = visible;
+        self
+    }
+}
+
+fn sep<'a>() -> Span<'a> {
+    Span::styled(" · ", theme::status_help_sep())
+}
+
+fn key<'a>(k: &'a str) -> Span<'a> {
+    Span::styled(k, theme::status_help_key())
+}
+
+fn desc<'a>(d: &'a str) -> Span<'a> {
+    Span::styled(d, theme::status_help_desc())
 }
 
 impl<'a> Widget for StatusBar<'a> {
@@ -50,71 +76,66 @@ impl<'a> Widget for StatusBar<'a> {
             return;
         }
 
-        let remaining = self.budget_limit - self.budget_consumed;
-        let budget_color = if remaining < 1.0 {
-            theme::RED
-        } else if remaining < 3.0 {
-            theme::YELLOW
-        } else {
-            theme::FG_MUTED
-        };
-
-        let mut spans: Vec<Span> = vec![
-            Span::styled(" ", Style::default().bg(theme::BG_SUBTLE)),
-            // Budget
-            Span::styled(
-                format!(
-                    " ${:.2}/{:.2} ",
-                    self.budget_consumed, self.budget_limit
-                ),
-                Style::default().fg(budget_color),
-            ),
-            Span::styled(" • ", Style::default().fg(theme::FG_DIM)),
-            // Model
-            Span::styled(
-                format!(" {} ", self.model_name),
-                Style::default().fg(theme::BLUE),
-            ),
-            Span::styled(" • ", Style::default().fg(theme::FG_DIM)),
-            // Mode
-            Span::styled(
-                format!(" {} ", self.mode),
-                Style::default()
-                    .fg(theme::ACCENT_SECONDARY)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ];
+        // ── Left side: status indicators ────────────────────────────
+        let mut left_spans: Vec<Span> = Vec::new();
 
         if self.is_indexing {
-            spans.push(Span::styled(" • ", Style::default().fg(theme::FG_DIM)));
-            spans.push(Span::styled(
+            left_spans.push(Span::styled(
                 " Indexing... ",
                 Style::default()
                     .fg(theme::YELLOW)
                     .add_modifier(Modifier::ITALIC),
             ));
+            left_spans.push(sep());
         }
 
         if self.memory_hit {
-            spans.push(Span::styled(" • ", Style::default().fg(theme::FG_DIM)));
-            spans.push(Span::styled(
-                " ⚡ Memory Hit ",
+            left_spans.push(Span::styled(
+                "⚡ Memory Hit",
                 Style::default()
                     .fg(theme::GREEN)
                     .add_modifier(Modifier::BOLD),
             ));
+            left_spans.push(sep());
         }
 
-        // Right-aligned keybindings
-        let keys_text = " ^C quit  Esc cancel  j/k scroll  ? help ";
-        let used_width: usize = spans.iter().map(|s| s.content.len()).sum();
-        let remaining_width = (area.width as usize).saturating_sub(used_width);
+        // ── Right side: keybind hints (minimal when help panel is visible) ──
+        let mut right_spans: Vec<Span> = Vec::new();
 
-        if remaining_width > keys_text.len() {
-            let padding = remaining_width - keys_text.len();
-            spans.push(Span::raw(" ".repeat(padding)));
+        if self.is_streaming {
+            right_spans.push(key("esc"));
+            right_spans.push(desc(" cancel"));
+            right_spans.push(sep());
         }
-        spans.push(Span::styled(keys_text, Style::default().fg(theme::FG_SUBTLE)));
+
+        if self.help_visible {
+            // Help panel is showing the full grid — just show toggle hint
+            right_spans.push(key("ctrl+g"));
+            right_spans.push(desc(" less"));
+        } else {
+            // Compact hints when help panel is hidden
+            right_spans.push(key("/"));
+            right_spans.push(desc(" commands"));
+            right_spans.push(sep());
+            right_spans.push(key("ctrl+c"));
+            right_spans.push(desc(" quit"));
+            right_spans.push(sep());
+            right_spans.push(key("ctrl+g"));
+            right_spans.push(desc(" more"));
+        }
+
+        // Calculate widths for padding
+        let left_width: usize = left_spans.iter().map(|s| s.content.len()).sum();
+        let right_width: usize = right_spans.iter().map(|s| s.content.len()).sum();
+        let total = left_width + right_width + 2; // 2 for edge padding
+        let padding = (area.width as usize).saturating_sub(total);
+
+        let mut spans = Vec::new();
+        spans.push(Span::raw(" "));
+        spans.extend(left_spans);
+        spans.push(Span::raw(" ".repeat(padding)));
+        spans.extend(right_spans);
+        spans.push(Span::raw(" "));
 
         let line = Line::from(spans);
         let bar = Paragraph::new(line).style(Style::default().bg(theme::BG_SUBTLE));

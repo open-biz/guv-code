@@ -16,11 +16,13 @@ pub const FG_HALF_MUTED: Color = Color::Rgb(160, 160, 160); // #A0A0A0 - Half-di
 pub const FG_SUBTLE: Color = Color::Rgb(80, 80, 80);      // #505050 - Ghost hints
 pub const FG_DIM: Color = Color::Rgb(60, 60, 60);         // #3C3C3C - Very dim
 
-// Primary Accents (Charm Pink + Codebuff Cyan)
-pub const CHARM_PINK: Color = Color::Rgb(255, 95, 135);   // #FF5F87 - Hot pink
+// Primary Accents (Charm-tone palette)
+pub const CHARM_PINK: Color = Color::Rgb(255, 95, 135);   // #FF5F87 - Hot pink (Charple)
 pub const CODEBUFF_CYAN: Color = Color::Rgb(0, 215, 215); // #00D7D7 - Vibrant cyan
+pub const DOLLY_PURPLE: Color = Color::Rgb(215, 161, 255);// #D7A1FF - Dolly (secondary)
+pub const BOK_GREEN: Color = Color::Rgb(135, 255, 175);   // #87FFAF - Bok (tertiary)
 pub const ACCENT_PRIMARY: Color = CHARM_PINK;
-pub const ACCENT_SECONDARY: Color = CODEBUFF_CYAN;
+pub const ACCENT_SECONDARY: Color = DOLLY_PURPLE;
 
 // Status Colors
 pub const GREEN: Color = Color::Rgb(95, 215, 135);        // #5FD787 - Success
@@ -41,6 +43,7 @@ pub const DIFF_EQUAL_FG: Color = FG_MUTED;
 // Borders
 pub const BORDER_DIM: Color = Color::Rgb(45, 45, 45);     // #2D2D2D
 pub const BORDER_FOCUS: Color = CHARM_PINK;
+pub const BORDER_CHARPLE: Color = CHARM_PINK;
 
 // Icons (matching Crush's icon set)
 pub const ICON_CHECK: &str = "✓";
@@ -52,7 +55,12 @@ pub const ICON_RADIO_OFF: &str = "○";
 pub const ICON_BORDER_THICK: &str = "▌";
 pub const ICON_SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 pub const ICON_IMAGE: &str = "■";
-pub const ICON_THINKING: &str = "💭";
+pub const ICON_THINKING: &str = "⋯";
+pub const ICON_MODEL: &str = "◇";
+pub const ICON_SECTION_SEP: &str = "─";
+pub const ICON_DIAGONAL: &str = "╱";
+pub const ICON_PROMPT_DOTS: &str = ":::";
+pub const ICON_FILTER_PROMPT: &str = "> ";
 
 // ── Reusable Style Presets ──────────────────────────────────────────────────
 
@@ -131,4 +139,90 @@ pub fn bold_primary() -> Style {
 
 pub fn dim_italic() -> Style {
     Style::default().fg(FG_MUTED).add_modifier(Modifier::ITALIC)
+}
+
+pub fn dolly() -> Style {
+    Style::default().fg(DOLLY_PURPLE)
+}
+
+pub fn dolly_bold() -> Style {
+    Style::default().fg(DOLLY_PURPLE).add_modifier(Modifier::BOLD)
+}
+
+pub fn palette_selected() -> Style {
+    Style::default().fg(FG_BASE).bg(CHARM_PINK)
+}
+
+pub fn palette_normal() -> Style {
+    Style::default().fg(FG_BASE)
+}
+
+pub fn palette_keybind() -> Style {
+    Style::default().fg(FG_MUTED)
+}
+
+pub fn section_title() -> Style {
+    Style::default().fg(FG_SUBTLE)
+}
+
+pub fn section_line() -> Style {
+    Style::default().fg(BORDER_DIM)
+}
+
+pub fn sidebar_label() -> Style {
+    Style::default().fg(FG_MUTED)
+}
+
+pub fn sidebar_value() -> Style {
+    Style::default().fg(FG_BASE)
+}
+
+pub fn prompt_dots_focused() -> Style {
+    Style::default().fg(BOK_GREEN)
+}
+
+pub fn prompt_dots_blurred() -> Style {
+    Style::default().fg(FG_MUTED)
+}
+
+pub fn status_help_key() -> Style {
+    Style::default().fg(FG_MUTED)
+}
+
+pub fn status_help_desc() -> Style {
+    Style::default().fg(FG_SUBTLE)
+}
+
+pub fn status_help_sep() -> Style {
+    Style::default().fg(BORDER_DIM)
+}
+
+// Mode bar styles (matching Crush screenshots)
+pub fn mode_yolo() -> Style {
+    Style::default().fg(CHARM_PINK).add_modifier(Modifier::BOLD)
+}
+
+pub fn mode_auto_accept() -> Style {
+    Style::default().fg(BOK_GREEN)
+}
+
+pub fn mode_plan() -> Style {
+    Style::default().fg(BOK_GREEN)
+}
+
+pub fn mode_manual() -> Style {
+    Style::default().fg(FG_MUTED)
+}
+
+pub fn mode_hint() -> Style {
+    Style::default().fg(FG_SUBTLE)
+}
+
+// Help panel styles
+pub fn help_key() -> Style {
+    Style::default().fg(FG_BASE)
+}
+
+pub fn help_desc() -> Style {
+    Style::default().fg(FG_MUTED)
 }

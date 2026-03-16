@@ -18,7 +18,7 @@ You give the orders. Guv handles the syntax, the AST-aware diffs, and the thousa
 Hire Guv for your terminal:
 
 ```bash
-curl -sL https://guv.dev/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/vovk/guv-code/main/scripts/install.sh | bash
 
 # Set your API key
 guv auth --anthropic "YOUR_KEY"

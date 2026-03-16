@@ -311,3 +311,166 @@ impl ModelProvider for AnthropicProvider {
         Ok(text)
     }
 }
+
+// ── OpenRouter Provider (OpenAI-compatible API) ─────────────────────────────
+
+#[derive(Clone)]
+pub struct OpenRouterProvider {
+    api_key: String,
+    model: String,
+    client: reqwest::Client,
+}
+
+impl OpenRouterProvider {
+    pub fn new(api_key: String) -> Self {
+        Self {
+            api_key,
+            model: "anthropic/claude-sonnet-4".into(),
+            client: reqwest::Client::new(),
+        }
+    }
+
+    pub fn with_model(mut self, model: &str) -> Self {
+        self.model = model.into();
+        self
+    }
+}
+
+#[derive(Serialize)]
+struct OpenRouterRequest {
+    model: String,
+    messages: Vec<OpenRouterMessage>,
+    stream: bool,
+}
+
+#[derive(Serialize)]
+struct OpenRouterMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct OpenRouterResponse {
+    choices: Vec<OpenRouterChoice>,
+}
+
+#[derive(Deserialize)]
+struct OpenRouterChoice {
+    message: Option<OpenRouterMsg>,
+    delta: Option<OpenRouterDelta>,
+}
+
+#[derive(Deserialize)]
+struct OpenRouterMsg {
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct OpenRouterDelta {
+    content: Option<String>,
+}
+
+#[async_trait]
+impl ModelProvider for OpenRouterProvider {
+    async fn complete_stream(
+        &self,
+        messages: Vec<Message>,
+    ) -> Result<mpsc::Receiver<Result<String>>> {
+        let (tx, rx) = mpsc::channel(100);
+        let url = "https://openrouter.ai/api/v1/chat/completions";
+
+        let or_messages: Vec<OpenRouterMessage> = messages.into_iter().map(|m| {
+            OpenRouterMessage {
+                role: m.role,
+                content: m.content,
+            }
+        }).collect();
+
+        let request = OpenRouterRequest {
+            model: self.model.clone(),
+            messages: or_messages,
+            stream: true,
+        };
+
+        let client = self.client.clone();
+        let api_key = self.api_key.clone();
+
+        tokio::spawn(async move {
+            let res = client.post(url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("HTTP-Referer", "https://github.com/open-biz/guv-code")
+                .header("X-Title", "GuvCode")
+                .json(&request)
+                .send()
+                .await;
+
+            match res {
+                Ok(response) => {
+                    let mut stream = response.bytes_stream().eventsource();
+                    while let Some(event) = stream.next().await {
+                        match event {
+                            Ok(e) => {
+                                if e.data == "[DONE]" {
+                                    break;
+                                }
+                                if let Ok(resp) = serde_json::from_str::<OpenRouterResponse>(&e.data) {
+                                    if let Some(choice) = resp.choices.get(0) {
+                                        if let Some(delta) = &choice.delta {
+                                            if let Some(content) = &delta.content {
+                                                let _ = tx.send(Ok(content.clone())).await;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                let _ = tx.send(Err(anyhow::anyhow!("Stream error: {}", err))).await;
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    let _ = tx.send(Err(anyhow::anyhow!("Request error: {}", err))).await;
+                }
+            }
+        });
+
+        Ok(rx)
+    }
+
+    async fn chat(&self, messages: Vec<Message>) -> Result<String> {
+        let url = "https://openrouter.ai/api/v1/chat/completions";
+
+        let or_messages = messages.into_iter().map(|m| {
+            OpenRouterMessage {
+                role: m.role,
+                content: m.content,
+            }
+        }).collect();
+
+        let request = OpenRouterRequest {
+            model: self.model.clone(),
+            messages: or_messages,
+            stream: false,
+        };
+
+        let response: OpenRouterResponse = self.client.post(url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("HTTP-Referer", "https://github.com/open-biz/guv-code")
+            .header("X-Title", "GuvCode")
+            .json(&request)
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        let text = response.choices.get(0)
+            .context("No choices in response")?
+            .message.as_ref()
+            .context("No message in choice")?
+            .content.clone();
+
+        Ok(text)
+    }
+}

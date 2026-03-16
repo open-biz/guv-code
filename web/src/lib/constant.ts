@@ -13,6 +13,6 @@ export const siteConfig = {
   ],
   url: () => process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
   supportEmail: () =>
-    process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@guv.dev',
+    process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@vovk.vc',
   github: 'https://github.com/open-biz/guv-code',
 }
