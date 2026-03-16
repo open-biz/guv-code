@@ -29,22 +29,40 @@ impl<'a> CoderAgent<'a> {
             );
 
             let messages = vec![Message { role: "user".to_string(), content: prompt }];
-            let mut stream = self.provider.complete_stream(messages).await?;
+            
+            // Send thinking message before starting stream
+            let _ = self.sender.send(AgentMessage::Thinking("Starting code generation stream...".into())).await;
+            
+            let mut stream = match self.provider.complete_stream(messages).await {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = self.sender.send(AgentMessage::Error(format!("Stream init failed: {}", e))).await;
+                    return Err(e);
+                }
+            };
+            
+            let _ = self.sender.send(AgentMessage::Thinking("Stream initialized, waiting for response...".into())).await;
             
             let mut full_patch = String::new();
+            let mut chunk_count = 0;
             while let Some(chunk) = stream.recv().await {
                 match chunk {
                     Ok(text) => {
+                        chunk_count += 1;
+                        if chunk_count == 1 {
+                            let _ = self.sender.send(AgentMessage::Thinking(format!("Receiving chunks ({})", chunk_count))).await;
+                        }
                         full_patch.push_str(&text);
                         let _ = self.sender.send(AgentMessage::CoderUpdate(text)).await;
                     }
                     Err(e) => {
-                        let _ = self.sender.send(AgentMessage::Error(e.to_string())).await;
+                        let _ = self.sender.send(AgentMessage::Error(format!("Stream error after {} chunks: {}", chunk_count, e))).await;
                         break;
                     }
                 }
             }
 
+            let _ = self.sender.send(AgentMessage::Thinking(format!("Stream completed ({} chunks)", chunk_count))).await;
             let _ = self.sender.send(AgentMessage::CoderCompleted(file_path, full_patch)).await;
         }
         Ok(())

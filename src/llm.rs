@@ -27,6 +27,8 @@ pub trait ModelProvider: Send + Sync {
 #[derive(Clone)]
 pub struct GeminiProvider {
     api_key: String,
+    model: String,
+    use_bearer: bool,
     client: reqwest::Client,
 }
 
@@ -34,7 +36,42 @@ impl GeminiProvider {
     pub fn new(api_key: String) -> Self {
         Self {
             api_key,
+            model: "gemini-2.5-flash".into(),
+            use_bearer: false,
             client: reqwest::Client::new(),
+        }
+    }
+
+    pub fn with_model(mut self, model: &str) -> Self {
+        self.model = model.into();
+        self
+    }
+
+    /// Use OAuth Bearer token auth instead of ?key= URL parameter.
+    pub fn with_bearer_auth(mut self) -> Self {
+        self.use_bearer = true;
+        self
+    }
+
+    fn build_url(&self, action: &str) -> String {
+        if self.use_bearer {
+            format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:{}",
+                self.model, action
+            )
+        } else {
+            format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:{}?key={}",
+                self.model, action, self.api_key
+            )
+        }
+    }
+
+    fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if self.use_bearer {
+            req.header("Authorization", format!("Bearer {}", self.api_key))
+        } else {
+            req
         }
     }
 }
@@ -82,10 +119,17 @@ impl ModelProvider for GeminiProvider {
         messages: Vec<Message>,
     ) -> Result<mpsc::Receiver<Result<String>>> {
         let (tx, rx) = mpsc::channel(100);
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse&key={}",
-            self.api_key
-        );
+        let url = if self.use_bearer {
+            format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse",
+                self.model
+            )
+        } else {
+            format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
+                self.model, self.api_key
+            )
+        };
 
         let contents = messages.into_iter().map(|m| {
             GeminiContent {
@@ -96,15 +140,27 @@ impl ModelProvider for GeminiProvider {
 
         let request = GeminiRequest { contents };
         let client = self.client.clone();
+        let use_bearer = self.use_bearer;
+        let api_key = self.api_key.clone();
 
         tokio::spawn(async move {
-            let res = client.post(url)
-                .json(&request)
-                .send()
-                .await;
+            let mut req = client.post(url).json(&request);
+            if use_bearer {
+                req = req.header("Authorization", format!("Bearer {}", api_key));
+            }
+            let res = req.send().await;
 
             match res {
                 Ok(response) => {
+                    let status = response.status();
+                    if !status.is_success() {
+                        // Read error body for diagnostics
+                        let body = response.text().await.unwrap_or_default();
+                        let _ = tx.send(Err(anyhow::anyhow!(
+                            "Gemini API error ({}): {}", status, &body[..body.len().min(500)]
+                        ))).await;
+                        return;
+                    }
                     let mut stream = response.bytes_stream().eventsource();
                     while let Some(event) = stream.next().await {
                         match event {
@@ -115,6 +171,12 @@ impl ModelProvider for GeminiProvider {
                                             let _ = tx.send(Ok(part.text.clone())).await;
                                         }
                                     }
+                                } else {
+                                    // Try to surface Gemini error messages from SSE data
+                                    let _ = tx.send(Err(anyhow::anyhow!(
+                                        "Gemini stream parse error: {}", &e.data[..e.data.len().min(300)]
+                                    ))).await;
+                                    break;
                                 }
                             }
                             Err(err) => {
@@ -134,10 +196,7 @@ impl ModelProvider for GeminiProvider {
     }
 
     async fn chat(&self, messages: Vec<Message>) -> Result<String> {
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={}",
-            self.api_key
-        );
+        let url = self.build_url("generateContent");
 
         let contents = messages.into_iter().map(|m| {
             GeminiContent {
@@ -148,14 +207,22 @@ impl ModelProvider for GeminiProvider {
 
         let request = GeminiRequest { contents };
 
-        let response = self.client.post(url)
+        let resp = self.apply_auth(self.client.post(&url))
             .json(&request)
             .send()
-            .await?
-            .json::<GeminiResponse>()
             .await?;
 
-        let text = response.candidates.get(0)
+        let status = resp.status();
+        let body = resp.text().await?;
+
+        if !status.is_success() {
+            anyhow::bail!("Gemini API error ({}): {}", status, body);
+        }
+
+        let parsed: GeminiResponse = serde_json::from_str(&body)
+            .with_context(|| format!("Failed to parse Gemini response: {}", &body[..body.len().min(500)]))?;
+
+        let text = parsed.candidates.get(0)
             .context("No candidates in response")?
             .content.parts.get(0)
             .context("No parts in candidate")?
@@ -168,6 +235,7 @@ impl ModelProvider for GeminiProvider {
 #[derive(Clone)]
 pub struct AnthropicProvider {
     api_key: String,
+    model: String,
     client: reqwest::Client,
 }
 
@@ -175,8 +243,14 @@ impl AnthropicProvider {
     pub fn new(api_key: String) -> Self {
         Self {
             api_key,
+            model: "claude-sonnet-4-20250514".into(),
             client: reqwest::Client::new(),
         }
+    }
+
+    pub fn with_model(mut self, model: &str) -> Self {
+        self.model = model.into();
+        self
     }
 }
 
@@ -235,7 +309,7 @@ impl ModelProvider for AnthropicProvider {
         }).collect();
 
         let request = AnthropicRequest {
-            model: "claude-3-7-sonnet-latest".to_string(),
+            model: self.model.clone(),
             messages: anthropic_messages,
             max_tokens: 4096,
             stream: true,
@@ -289,7 +363,7 @@ impl ModelProvider for AnthropicProvider {
         }).collect();
 
         let request = AnthropicRequest {
-            model: "claude-3-7-sonnet-latest".to_string(),
+            model: self.model.clone(),
             messages: anthropic_messages,
             max_tokens: 4096,
             stream: false,

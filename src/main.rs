@@ -136,13 +136,36 @@ async fn main() -> Result<()> {
 
             if let Some(ref key) = gemini {
                 config.keys.gemini = Some(key.clone());
-                println!("{} Gemini API key updated.", "✅".green());
+                // Save to credential store
+                let creds = auth::StoredCredentials {
+                    auth_type: AuthType::GeminiApiKey,
+                    token: None,
+                    api_key: Some(key.clone()),
+                    updated_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                };
+                auth::save_credentials(&creds).map_err(|e| miette!("{}", e))?;
+                println!("{} Gemini API key saved.", "✅".green());
             }
             if let Some(ref key) = anthropic {
                 config.keys.anthropic = Some(key.clone());
-                println!("{} Anthropic API key updated.", "✅".green());
+                // Save to credential store
+                let creds = auth::StoredCredentials {
+                    auth_type: AuthType::AnthropicApiKey,
+                    token: None,
+                    api_key: Some(key.clone()),
+                    updated_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                };
+                auth::save_credentials(&creds).map_err(|e| miette!("{}", e))?;
+                println!("{} Anthropic API key saved.", "✅".green());
             }
             
+            // Save model/budget config (keys are not written to TOML)
             if local {
                 config.save_local().map_err(|e| miette!("{}", e))?;
             } else {
@@ -169,9 +192,13 @@ async fn main() -> Result<()> {
                     println!("  Method:    {}", "Not configured".yellow());
                 }
                 println!();
+                println!("{}:", "Model".bold().blue());
+                println!("  Selected:  {}", config.model.display_name().cyan());
+                println!();
                 println!("{}:", "API Keys".bold().blue());
                 println!("  Gemini:    {}", config.keys.gemini.as_ref().map(|_| "****").unwrap_or("Not set").yellow());
                 println!("  Anthropic: {}", config.keys.anthropic.as_ref().map(|_| "****").unwrap_or("Not set").yellow());
+                println!("  OpenRouter:{}", config.keys.openrouter.as_ref().map(|_| " ****").unwrap_or(" Not set").yellow());
                 println!();
                 println!("{}:", "Options".bold().blue());
                 println!("  guv auth --login     Sign in with Google OAuth");

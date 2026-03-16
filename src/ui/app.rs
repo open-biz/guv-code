@@ -51,6 +51,14 @@ impl AgentMode {
     }
 }
 
+// ── API Key Input Flow State ────────────────────────────────────────────────
+#[derive(Clone, Debug, PartialEq)]
+enum ApiKeyFlow {
+    Inactive,
+    PickProvider { selected: usize },
+    EnterKey { provider: config::Provider, input: String },
+}
+
 // ── Auth Sub-Menu Options ───────────────────────────────────────────────────
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum AuthMenuItem {
@@ -76,7 +84,7 @@ impl AuthMenuItem {
         match self {
             Self::LoginGoogle => "Sign in with Google OAuth",
             Self::LoginOpenRouter => "Sign in with OpenRouter",
-            Self::SetApiKey => "Set API key manually",
+            Self::SetApiKey => "Set API key (Gemini / Anthropic / OpenRouter)",
             Self::Status => "View auth status",
             Self::Logout => "Log out (clear credentials)",
         }
@@ -188,6 +196,9 @@ pub struct App {
     show_auth_menu: bool,
     auth_menu_selected: usize,
 
+    // API key input flow state
+    api_key_flow: ApiKeyFlow,
+
     // Model sub-menu state
     show_model_menu: bool,
     model_menu_level: ModelMenuLevel,
@@ -197,11 +208,7 @@ pub struct App {
 impl App {
     pub fn new(config: Config) -> Self {
         let repo_path = env::current_dir().unwrap_or_else(|_| ".".into());
-        let orchestrator = if let (Some(g), Some(a)) = (&config.keys.gemini, &config.keys.anthropic) {
-            Some(Orchestrator::new(repo_path.clone(), g.clone(), a.clone()))
-        } else {
-            None
-        };
+        let orchestrator = Orchestrator::from_config(repo_path.clone(), &config).ok();
         Self {
             input: String::new(),
             cursor_pos: 0,
@@ -235,6 +242,7 @@ impl App {
             show_tools: false,
             show_auth_menu: false,
             auth_menu_selected: 0,
+            api_key_flow: ApiKeyFlow::Inactive,
             show_model_menu: false,
             model_menu_level: ModelMenuLevel::PickProvider,
             model_menu_selected: 0,
@@ -284,7 +292,8 @@ impl App {
             } else {
                 self.messages.push(ChatMsg {
                     kind: MsgKind::Error,
-                    text: "API keys not configured. Use /auth or /login.".into(),
+                    text: "No API key configured. Use /auth to set one, or run: guv auth -g <GEMINI_KEY>. \
+                           Get a free key at https://aistudio.google.com/apikey".into(),
                 });
             }
         }
@@ -362,6 +371,107 @@ impl App {
                     continue;
                 }
 
+                // ── API Key Input Flow Intercept ─────────────────────────
+                if self.api_key_flow != ApiKeyFlow::Inactive {
+                    let providers = [config::Provider::Google, config::Provider::Anthropic, config::Provider::OpenRouter];
+                    match &mut self.api_key_flow {
+                        ApiKeyFlow::PickProvider { selected } => {
+                            match key.code {
+                                KeyCode::Esc => {
+                                    self.api_key_flow = ApiKeyFlow::Inactive;
+                                }
+                                KeyCode::Up | KeyCode::Char('k') => {
+                                    *selected = selected.saturating_sub(1);
+                                }
+                                KeyCode::Down | KeyCode::Char('j') => {
+                                    if *selected + 1 < providers.len() {
+                                        *selected += 1;
+                                    }
+                                }
+                                KeyCode::Enter => {
+                                    let provider = providers[*selected].clone();
+                                    self.api_key_flow = ApiKeyFlow::EnterKey {
+                                        provider,
+                                        input: String::new(),
+                                    };
+                                }
+                                _ => {}
+                            }
+                        }
+                        ApiKeyFlow::EnterKey { provider, input } => {
+                            match key.code {
+                                KeyCode::Esc => {
+                                    self.api_key_flow = ApiKeyFlow::PickProvider { selected: 0 };
+                                }
+                                KeyCode::Enter => {
+                                    let key_val = input.trim().to_string();
+                                    if key_val.is_empty() {
+                                        self.messages.push(ChatMsg {
+                                            kind: MsgKind::Error,
+                                            text: "API key cannot be empty.".into(),
+                                        });
+                                    } else {
+                                        let provider_clone = provider.clone();
+                                        // Save key to config
+                                        match provider_clone {
+                                            config::Provider::Google => {
+                                                self.config.keys.gemini = Some(key_val.clone());
+                                                // Also store as GeminiApiKey in credential store
+                                                let creds = auth::StoredCredentials {
+                                                    auth_type: auth::AuthType::GeminiApiKey,
+                                                    token: None,
+                                                    api_key: Some(key_val),
+                                                    updated_at: std::time::SystemTime::now()
+                                                        .duration_since(std::time::UNIX_EPOCH)
+                                                        .unwrap_or_default()
+                                                        .as_secs(),
+                                                };
+                                                let _ = auth::save_credentials(&creds);
+                                            }
+                                            config::Provider::Anthropic => {
+                                                self.config.keys.anthropic = Some(key_val);
+                                            }
+                                            config::Provider::OpenRouter => {
+                                                self.config.keys.openrouter = Some(key_val);
+                                            }
+                                        }
+                                        // Auto-select model for this provider
+                                        self.config.auto_select_model();
+                                        // Save config
+                                        let _ = self.config.save_global();
+                                        // Recreate orchestrator
+                                        self.orchestrator = Orchestrator::from_config(
+                                            self.repo_path.clone(),
+                                            &self.config,
+                                        ).ok();
+                                        let model = self.config.model.display_name();
+                                        self.messages.push(ChatMsg {
+                                            kind: MsgKind::System,
+                                            text: format!(
+                                                "{} API key saved. Model: {}",
+                                                provider_clone, model
+                                            ),
+                                        });
+                                        self.api_key_flow = ApiKeyFlow::Inactive;
+                                    }
+                                }
+                                KeyCode::Backspace => {
+                                    input.pop();
+                                }
+                                KeyCode::Char(c) => {
+                                    input.push(c);
+                                }
+                                _ => {}
+                            }
+                        }
+                        ApiKeyFlow::Inactive => unreachable!(),
+                    }
+                    while let Ok(msg) = ui_rx.try_recv() {
+                        self.handle_agent_message(msg);
+                    }
+                    continue;
+                }
+
                 // ── Auth Sub-Menu Intercept ───────────────────────────
                 if self.show_auth_menu {
                     let items = AuthMenuItem::all();
@@ -390,7 +500,7 @@ impl App {
                                     tokio::spawn(async move {
                                         match Self::run_google_oauth_login().await {
                                             Ok(_) => {
-                                                let _ = tx.send(AgentMessage::Thinking("Google OAuth login successful.".into())).await;
+                                                let _ = tx.send(AgentMessage::AuthCompleted("Google".into())).await;
                                             }
                                             Err(e) => {
                                                 let _ = tx.send(AgentMessage::Error(format!("Google OAuth failed: {}", e))).await;
@@ -407,7 +517,7 @@ impl App {
                                     tokio::spawn(async move {
                                         match Self::run_openrouter_oauth_login().await {
                                             Ok(_) => {
-                                                let _ = tx.send(AgentMessage::Thinking("OpenRouter login successful.".into())).await;
+                                                let _ = tx.send(AgentMessage::AuthCompleted("OpenRouter".into())).await;
                                             }
                                             Err(e) => {
                                                 let _ = tx.send(AgentMessage::Error(format!("OpenRouter login failed: {}", e))).await;
@@ -416,10 +526,9 @@ impl App {
                                     });
                                 }
                                 AuthMenuItem::SetApiKey => {
-                                    self.messages.push(ChatMsg {
-                                        kind: MsgKind::System,
-                                        text: "Set keys via CLI: guv auth -g <GEMINI_KEY> or guv auth -a <ANTHROPIC_KEY>".into(),
-                                    });
+                                    // Close auth menu and enter provider picker for API key
+                                    self.show_auth_menu = false;
+                                    self.api_key_flow = ApiKeyFlow::PickProvider { selected: 0 };
                                 }
                                 AuthMenuItem::Status => {
                                     self.handle_slash_command("auth_status", &ui_tx).await;
@@ -495,9 +604,16 @@ impl App {
                                             provider: provider.clone(),
                                             model_id: model_id.to_string(),
                                         };
+                                        // Recreate orchestrator with new model
+                                        self.orchestrator = Orchestrator::from_config(
+                                            self.repo_path.clone(),
+                                            &self.config,
+                                        ).ok();
+                                        let has_key = self.config.active_api_key().is_some();
+                                        let status = if has_key { "" } else { " (no API key — use /auth)" };
                                         self.messages.push(ChatMsg {
                                             kind: MsgKind::System,
-                                            text: format!("Model set to {}", self.config.model.display_name()),
+                                            text: format!("Model set to {}{}", self.config.model.display_name(), status),
                                         });
                                         self.show_model_menu = false;
                                         self.model_menu_level = ModelMenuLevel::PickProvider;
@@ -775,7 +891,8 @@ impl App {
                         } else {
                             self.messages.push(ChatMsg {
                                 kind: MsgKind::Error,
-                                text: "API keys not configured. Run `guv auth`.".into(),
+                                text: "No API key configured. Use /auth to set one, or run: guv auth -g <GEMINI_KEY>. \
+                                       Get a free key at https://aistudio.google.com/apikey".into(),
                             });
                         }
                     }
@@ -1122,6 +1239,44 @@ impl App {
             AgentMessage::IndexingCompleted => {
                 self.is_indexing = false;
             }
+            AgentMessage::AuthCompleted(provider_name) => {
+                // Reload config to pick up new credentials
+                if let Ok(new_config) = Config::load() {
+                    self.config = new_config;
+                }
+                // Try to recreate orchestrator with new credentials
+                self.orchestrator = Orchestrator::from_config(
+                    self.repo_path.clone(),
+                    &self.config,
+                ).ok();
+
+                if self.orchestrator.is_some() {
+                    let model_display = self.config.model.display_name();
+                    self.messages.push(ChatMsg {
+                        kind: MsgKind::System,
+                        text: format!(
+                            "{} auth successful. Model: {}",
+                            provider_name, model_display
+                        ),
+                    });
+                } else if provider_name == "Google" {
+                    // Google OAuth tokens don't work with generativelanguage.googleapis.com
+                    self.messages.push(ChatMsg {
+                        kind: MsgKind::System,
+                        text: "Google OAuth signed in, but OAuth tokens are not supported by the Gemini API. \
+                               Please set a Gemini API key: /auth → Set API Key, or run: guv auth -g <KEY>. \
+                               Get a key at https://aistudio.google.com/apikey".into(),
+                    });
+                } else {
+                    self.messages.push(ChatMsg {
+                        kind: MsgKind::Error,
+                        text: format!(
+                            "{} auth completed but no usable API key found. Use /auth to configure.",
+                            provider_name
+                        ),
+                    });
+                }
+            }
         }
     }
 
@@ -1198,6 +1353,11 @@ impl App {
                     .selected(self.approval_selection.clone()),
                 area,
             );
+        }
+
+        // API key input flow overlay
+        if self.api_key_flow != ApiKeyFlow::Inactive {
+            self.render_api_key_flow(f, area);
         }
 
         // Auth sub-menu overlay
@@ -1844,6 +2004,98 @@ impl App {
             width: area.width.saturating_sub(2),
             height: area.height,
         });
+    }
+
+    // ── API Key Input Flow (centered overlay) ─────────────────────────
+    fn render_api_key_flow(&self, f: &mut Frame, area: Rect) {
+        let providers = [
+            (config::Provider::Google, "Gemini", "aistudio.google.com/apikey"),
+            (config::Provider::Anthropic, "Anthropic", "console.anthropic.com"),
+            (config::Provider::OpenRouter, "OpenRouter", "openrouter.ai/keys"),
+        ];
+
+        let menu_w = 52u16.min(area.width.saturating_sub(4));
+
+        match &self.api_key_flow {
+            ApiKeyFlow::PickProvider { selected } => {
+                let menu_h = 8u16.min(area.height.saturating_sub(4));
+                let x = area.x + (area.width.saturating_sub(menu_w)) / 2;
+                let y = area.y + (area.height.saturating_sub(menu_h)) / 2;
+                let menu_area = Rect::new(x, y, menu_w, menu_h);
+
+                let block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(theme::CHARM_PINK))
+                    .title(Span::styled(" Set API Key — Pick Provider ", theme::accent()))
+                    .style(Style::default().bg(theme::BG_SUBTLE));
+                let inner = block.inner(menu_area);
+                f.render_widget(Clear, menu_area);
+                f.render_widget(block, menu_area);
+                if inner.height == 0 { return; }
+
+                let mut lines: Vec<Line> = Vec::new();
+                for (i, (_, label, url)) in providers.iter().enumerate() {
+                    let sel = i == *selected;
+                    let prefix = if sel { " ▸ " } else { "   " };
+                    let style = if sel {
+                        Style::default().fg(theme::FG_BASE).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(theme::FG_MUTED)
+                    };
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("{}{}", prefix, label), style),
+                        Span::styled(format!("  ({})", url), Style::default().fg(theme::FG_DIM)),
+                    ]));
+                }
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(" esc to cancel", theme::ghost_hint())));
+                f.render_widget(Paragraph::new(lines), inner);
+            }
+            ApiKeyFlow::EnterKey { provider, input } => {
+                let menu_h = 7u16.min(area.height.saturating_sub(4));
+                let x = area.x + (area.width.saturating_sub(menu_w)) / 2;
+                let y = area.y + (area.height.saturating_sub(menu_h)) / 2;
+                let menu_area = Rect::new(x, y, menu_w, menu_h);
+
+                let title = format!(" Enter {} API Key ", provider);
+                let block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(theme::CHARM_PINK))
+                    .title(Span::styled(title, theme::accent()))
+                    .style(Style::default().bg(theme::BG_SUBTLE));
+                let inner = block.inner(menu_area);
+                f.render_widget(Clear, menu_area);
+                f.render_widget(block, menu_area);
+                if inner.height == 0 { return; }
+
+                // Show masked key input
+                let display = if input.is_empty() {
+                    "paste your key here…".to_string()
+                } else if input.len() <= 8 {
+                    "*".repeat(input.len())
+                } else {
+                    format!("{}…{}", &input[..4], &input[input.len()-4..])
+                };
+                let mut lines: Vec<Line> = Vec::new();
+                lines.push(Line::from(Span::styled(
+                    format!(" > {}", display),
+                    if input.is_empty() {
+                        Style::default().fg(theme::FG_DIM)
+                    } else {
+                        Style::default().fg(theme::FG_BASE)
+                    },
+                )));
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    " enter to save · esc to go back",
+                    theme::ghost_hint(),
+                )));
+                f.render_widget(Paragraph::new(lines), inner);
+            }
+            ApiKeyFlow::Inactive => {}
+        }
     }
 
     // ── Auth Sub-Menu (centered overlay) ──────────────────────────────

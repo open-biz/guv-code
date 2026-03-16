@@ -65,4 +65,7 @@ pub enum AgentMessage {
     Error(String),
     IndexingStarted,
     IndexingCompleted,
+
+    // Auth completed — triggers config reload + model auto-select
+    AuthCompleted(String), // provider name
 }

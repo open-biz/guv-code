@@ -3,22 +3,59 @@ use crate::agent_logic::planner::PlannerAgent;
 use crate::agent_logic::coder::CoderAgent;
 use crate::agent_logic::reviewer::ReviewerAgent;
 use crate::terminal::TerminalManager;
-use crate::llm::{GeminiProvider, AnthropicProvider};
+use crate::llm::{GeminiProvider, AnthropicProvider, OpenRouterProvider, ModelProvider};
+use crate::config::{Config, Provider};
 use crate::index::RepoIndex;
 use tokio::sync::mpsc;
 use anyhow::Result;
 use std::path::PathBuf;
+use std::sync::Arc;
+
+/// Create the appropriate ModelProvider based on the current Config.
+pub fn create_provider(config: &Config) -> Result<Arc<dyn ModelProvider>> {
+    let api_key = config.active_api_key()
+        .ok_or_else(|| anyhow::anyhow!(
+            "No API key for {} — use /auth to sign in or set a key",
+            config.model.provider
+        ))?
+        .to_string();
+
+    let model_id = &config.model.model_id;
+
+    Ok(match config.model.provider {
+        Provider::Google => {
+            let mut provider = GeminiProvider::new(api_key).with_model(model_id);
+            // Detect OAuth tokens (start with "ya29.") and use Bearer auth
+            if let Some(key) = config.active_api_key() {
+                if key.starts_with("ya29.") {
+                    provider = provider.with_bearer_auth();
+                }
+            }
+            Arc::new(provider)
+        }
+        Provider::Anthropic => Arc::new(
+            AnthropicProvider::new(api_key).with_model(model_id),
+        ),
+        Provider::OpenRouter => Arc::new(
+            OpenRouterProvider::new(api_key).with_model(model_id),
+        ),
+    })
+}
 
 #[derive(Clone)]
 pub struct Orchestrator {
     repo_path: PathBuf,
-    gemini_key: String,
-    anthropic_key: String,
+    provider: Arc<dyn ModelProvider>,
 }
 
 impl Orchestrator {
-    pub fn new(repo_path: PathBuf, gemini_key: String, anthropic_key: String) -> Self {
-        Self { repo_path, gemini_key, anthropic_key }
+    pub fn new(repo_path: PathBuf, provider: Arc<dyn ModelProvider>) -> Self {
+        Self { repo_path, provider }
+    }
+
+    pub fn from_config(repo_path: PathBuf, config: &Config) -> Result<Self> {
+        let provider = create_provider(config)?;
+        Ok(Self { repo_path, provider })
     }
 
     pub async fn run(
@@ -29,13 +66,12 @@ impl Orchestrator {
     ) -> Result<()> {
         let (agent_tx, mut agent_rx) = mpsc::channel(100);
 
-        let scout_provider = GeminiProvider::new(self.gemini_key.clone());
-        let coder_provider = AnthropicProvider::new(self.anthropic_key.clone());
+        let provider = self.provider.clone();
 
         let repo_path = self.repo_path.clone();
         let query_clone = query.clone();
         let agent_tx_planner = agent_tx.clone();
-        let scout_provider_clone = scout_provider.clone();
+        let provider_planner = provider.clone();
         let ui_sender_idx = ui_sender.clone();
 
         // Start Orchestration Task
@@ -68,7 +104,7 @@ impl Orchestrator {
                 description: "Analyzing codebase to identify target files".into(),
             }).await;
 
-            let planner = PlannerAgent::new(&scout_provider_clone, agent_tx_planner.clone());
+            let planner = PlannerAgent::new(provider_planner.as_ref(), agent_tx_planner.clone());
             if let Err(e) = planner.plan(&index, &query_clone).await {
                 let _ = ui_sender_idx.send(AgentMessage::ToolCompleted {
                     name: "planner".into(),
@@ -103,7 +139,7 @@ impl Orchestrator {
                         AgentMessage::PlanCompleted(files) => {
                             let repo_path = self.repo_path.clone();
                             let query_clone = query.clone();
-                            let coder_provider_clone = coder_provider.clone();
+                            let provider_coder = provider.clone();
                             let agent_tx_coder = agent_tx.clone();
                             let ui_sender_c = ui_sender.clone();
 
@@ -114,7 +150,7 @@ impl Orchestrator {
                                     description: format!("Editing {} file(s)", files.len()),
                                 }).await;
 
-                                let coder = CoderAgent::new(&coder_provider_clone, agent_tx_coder);
+                                let coder = CoderAgent::new(provider_coder.as_ref(), agent_tx_coder);
                                 let _ = coder.code(&repo_path, &query_clone, files).await;
 
                                 let _ = ui_sender_c.send(AgentMessage::ToolCompleted {
