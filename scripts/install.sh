@@ -3,7 +3,7 @@
 # GuvCode Installer
 # "Right away, Guv'nor."
 #
-# Usage: curl -fsSL https://raw.githubusercontent.com/vovk/guv-code/main/scripts/install.sh | sh
+# Usage: curl -fsSL https://bit.ly/install-guv | sh
 
 set -e
 

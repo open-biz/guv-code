@@ -15,7 +15,7 @@ use crossterm::{
 use tokio::sync::mpsc;
 use crate::agent_logic::{AgentMessage, AgentPhase, ToolStatus};
 use crate::orchestrator::Orchestrator;
-use crate::config::Config;
+use crate::config::{self as config, Config};
 use crate::ui::theme;
 use crate::ui::widgets::stepper::{self, AgentStepper};
 use crate::ui::widgets::diff_view;
@@ -81,6 +81,13 @@ impl AuthMenuItem {
             Self::Logout => "Log out (clear credentials)",
         }
     }
+}
+
+// ── Model Sub-Menu State ─────────────────────────────────────────────────────
+#[derive(Clone, PartialEq, Debug)]
+enum ModelMenuLevel {
+    PickProvider,
+    PickModel(config::Provider),
 }
 
 // ── Focus Zones ─────────────────────────────────────────────────────────────
@@ -180,6 +187,11 @@ pub struct App {
     // Auth sub-menu state
     show_auth_menu: bool,
     auth_menu_selected: usize,
+
+    // Model sub-menu state
+    show_model_menu: bool,
+    model_menu_level: ModelMenuLevel,
+    model_menu_selected: usize,
 }
 
 impl App {
@@ -223,6 +235,9 @@ impl App {
             show_tools: false,
             show_auth_menu: false,
             auth_menu_selected: 0,
+            show_model_menu: false,
+            model_menu_level: ModelMenuLevel::PickProvider,
+            model_menu_selected: 0,
             available_tools: vec![
                 ("read_file", "Read file contents from workspace"),
                 ("edit_file", "Apply targeted edits to files"),
@@ -423,6 +438,69 @@ impl App {
                                                 text: format!("Logout failed: {}", e),
                                             });
                                         }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                    while let Ok(msg) = ui_rx.try_recv() {
+                        self.handle_agent_message(msg);
+                    }
+                    continue;
+                }
+
+                // ── Model Sub-Menu Intercept ─────────────────────────
+                if self.show_model_menu {
+                    match key.code {
+                        KeyCode::Esc => {
+                            match &self.model_menu_level {
+                                ModelMenuLevel::PickModel(_) => {
+                                    // Go back to provider picker
+                                    self.model_menu_level = ModelMenuLevel::PickProvider;
+                                    self.model_menu_selected = 0;
+                                }
+                                ModelMenuLevel::PickProvider => {
+                                    self.show_model_menu = false;
+                                }
+                            }
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            self.model_menu_selected = self.model_menu_selected.saturating_sub(1);
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            let max = match &self.model_menu_level {
+                                ModelMenuLevel::PickProvider => 3, // Google, Anthropic, OpenRouter
+                                ModelMenuLevel::PickModel(p) => config::models_for_provider(p).len(),
+                            };
+                            if self.model_menu_selected + 1 < max {
+                                self.model_menu_selected += 1;
+                            }
+                        }
+                        KeyCode::Enter => {
+                            match self.model_menu_level.clone() {
+                                ModelMenuLevel::PickProvider => {
+                                    let provider = match self.model_menu_selected {
+                                        0 => config::Provider::Google,
+                                        1 => config::Provider::Anthropic,
+                                        _ => config::Provider::OpenRouter,
+                                    };
+                                    self.model_menu_level = ModelMenuLevel::PickModel(provider);
+                                    self.model_menu_selected = 0;
+                                }
+                                ModelMenuLevel::PickModel(ref provider) => {
+                                    let models = config::models_for_provider(provider);
+                                    if let Some((model_id, _)) = models.get(self.model_menu_selected) {
+                                        self.config.model = config::ModelChoice {
+                                            provider: provider.clone(),
+                                            model_id: model_id.to_string(),
+                                        };
+                                        self.messages.push(ChatMsg {
+                                            kind: MsgKind::System,
+                                            text: format!("Model set to {}", self.config.model.display_name()),
+                                        });
+                                        self.show_model_menu = false;
+                                        self.model_menu_level = ModelMenuLevel::PickProvider;
                                     }
                                 }
                             }
@@ -773,10 +851,9 @@ impl App {
                 self.show_help = !self.show_help;
             }
             "model" => {
-                self.messages.push(ChatMsg {
-                    kind: MsgKind::System,
-                    text: "Model selection not yet implemented.".into(),
-                });
+                self.show_model_menu = true;
+                self.model_menu_level = ModelMenuLevel::PickProvider;
+                self.model_menu_selected = 0;
             }
             "history" => {
                 self.messages.push(ChatMsg {
@@ -1128,6 +1205,11 @@ impl App {
             self.render_auth_menu(f, area);
         }
 
+        // Model sub-menu overlay
+        if self.show_model_menu {
+            self.render_model_menu(f, area);
+        }
+
         // Command Palette overlay (renders on top of everything)
         if self.palette.visible {
             f.render_widget(CommandPalette::new(&self.palette), area);
@@ -1167,6 +1249,12 @@ impl App {
                     .add_modifier(Modifier::BOLD),
             ));
         }
+
+        // Model indicator in header
+        spans.push(Span::styled(
+            format!(" {} ", self.config.model.display_name()),
+            Style::default().fg(theme::FG_MUTED).add_modifier(Modifier::DIM),
+        ));
 
         // Image tags in header
         for tag in &self.image_tags {
@@ -1808,6 +1896,94 @@ impl App {
         f.render_widget(para, inner);
     }
 
+    // ── Model Sub-Menu (centered overlay, two-level) ──────────────────
+    fn render_model_menu(&self, f: &mut Frame, area: Rect) {
+        let menu_w = 52u16.min(area.width.saturating_sub(4));
+
+        let (title, items): (&str, Vec<(String, String)>) = match &self.model_menu_level {
+            ModelMenuLevel::PickProvider => {
+                let providers = vec![
+                    ("Google".into(), format!("Gemini models ({})", if self.config.keys.gemini.is_some() { "key set" } else { "no key" })),
+                    ("Anthropic".into(), format!("Claude models ({})", if self.config.keys.anthropic.is_some() { "key set" } else { "no key" })),
+                    ("OpenRouter".into(), format!("Multi-provider ({})", if self.config.keys.openrouter.is_some() { "key set" } else { "no key" })),
+                ];
+                ("Select Provider", providers)
+            }
+            ModelMenuLevel::PickModel(provider) => {
+                let models = config::models_for_provider(provider);
+                let items: Vec<(String, String)> = models.iter().map(|(id, desc)| {
+                    let current = if self.config.model.model_id == *id && self.config.model.provider == *provider {
+                        " (current)"
+                    } else {
+                        ""
+                    };
+                    (format!("{}{}", id, current), desc.to_string())
+                }).collect();
+                (match provider {
+                    config::Provider::Google => "Google Models",
+                    config::Provider::Anthropic => "Anthropic Models",
+                    config::Provider::OpenRouter => "OpenRouter Models",
+                }, items)
+            }
+        };
+
+        let menu_h = (items.len() as u16 + 5).min(area.height.saturating_sub(4));
+        let x = area.x + (area.width.saturating_sub(menu_w)) / 2;
+        let y = area.y + (area.height.saturating_sub(menu_h)) / 2;
+        let menu_area = Rect::new(x, y, menu_w, menu_h);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme::CODEBUFF_CYAN))
+            .title(Span::styled(format!(" {} ", title), theme::accent()))
+            .style(Style::default().bg(theme::BG_SUBTLE));
+
+        let inner = block.inner(menu_area);
+        f.render_widget(Clear, menu_area);
+        f.render_widget(block, menu_area);
+
+        if inner.height == 0 || inner.width < 5 {
+            return;
+        }
+
+        let mut lines: Vec<Line> = Vec::new();
+
+        // Current model indicator
+        lines.push(Line::from(Span::styled(
+            format!(" Active: {}", self.config.model.display_name()),
+            Style::default().fg(theme::GREEN),
+        )));
+        lines.push(Line::from(""));
+
+        for (i, (label, desc)) in items.iter().enumerate() {
+            let selected = i == self.model_menu_selected;
+            let prefix = if selected { " ▸ " } else { "   " };
+            if selected {
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, Style::default().fg(theme::FG_BASE).add_modifier(Modifier::BOLD)),
+                    Span::styled(label.as_str(), Style::default().fg(theme::FG_BASE).add_modifier(Modifier::BOLD)),
+                    Span::styled(format!("  {}", desc), Style::default().fg(theme::FG_MUTED)),
+                ]));
+            } else {
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, Style::default().fg(theme::FG_MUTED)),
+                    Span::styled(label.as_str(), Style::default().fg(theme::FG_MUTED)),
+                ]));
+            }
+        }
+
+        lines.push(Line::from(""));
+        let hint = match &self.model_menu_level {
+            ModelMenuLevel::PickProvider => " esc to close",
+            ModelMenuLevel::PickModel(_) => " esc to go back",
+        };
+        lines.push(Line::from(Span::styled(hint, theme::ghost_hint())));
+
+        let para = Paragraph::new(lines);
+        f.render_widget(para, inner);
+    }
+
     // ── Input (Charm-style ::: prompt) ────────────────────────────────
     fn render_input(&self, f: &mut Frame, area: Rect) {
         let is_focused = self.focus == FocusPane::Input;
@@ -1943,6 +2119,28 @@ pub async fn start_tui(config: Config, opts: TuiOptions) -> Result<()> {
     }
     if opts.show_tools {
         app.show_tools = true;
+    }
+    if let Some(ref model_name) = opts.model {
+        // Try to resolve provider from model name
+        let catalog = config::model_catalog();
+        if let Some((provider, id, _)) = catalog.iter().find(|(_, id, _)| *id == model_name.as_str()) {
+            app.config.model = config::ModelChoice {
+                provider: provider.clone(),
+                model_id: id.to_string(),
+            };
+        } else {
+            // Unknown model — assume it's an OpenRouter model if it contains /
+            let (provider, model_id) = if model_name.contains('/') {
+                (config::Provider::OpenRouter, model_name.clone())
+            } else if model_name.starts_with("gemini") {
+                (config::Provider::Google, model_name.clone())
+            } else if model_name.starts_with("claude") {
+                (config::Provider::Anthropic, model_name.clone())
+            } else {
+                (config::Provider::OpenRouter, model_name.clone())
+            };
+            app.config.model = config::ModelChoice { provider, model_id };
+        }
     }
 
     let res = app.run(&mut terminal, opts.prompt).await;

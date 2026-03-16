@@ -73,7 +73,7 @@ Stop wrestling with dependencies and start vibing.
 
 **Option 1: Quick Install (Recommended)**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vovk/guv-code/main/scripts/install.sh | bash
+curl -fsSL https://bit.ly/install-guv | bash
 ```
 
 **Option 2: Install via Cargo**

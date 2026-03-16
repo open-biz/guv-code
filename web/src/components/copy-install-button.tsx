@@ -5,7 +5,7 @@ import { useState } from 'react'
 
 import { cn } from '@/lib/utils'
 
-const INSTALL_COMMAND = 'curl -fsSL https://raw.githubusercontent.com/vovk/guv-code/main/scripts/install.sh | bash'
+const INSTALL_COMMAND = 'curl -fsSL https://bit.ly/install-guv | bash'
 
 export function CopyInstallButton({ className }: { className?: string }) {
   const [copied, setCopied] = useState(false)
